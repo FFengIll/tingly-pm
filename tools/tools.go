@@ -10,17 +10,26 @@ import (
 
 	"github.com/FFengIll/tingly-pm/board"
 
+	"github.com/tingly-dev/tingly-agentscope/pkg/session"
 	"github.com/tingly-dev/tingly-agentscope/pkg/tool"
 )
 
 // PMTools provides all PM agent tools
 type PMTools struct {
-	pmDir string
+	pmDir       string
+	sessionMgr  *session.SessionManager
+	sessionID   string
 }
 
 // NewPMTools creates a new PMTools instance
 func NewPMTools(pmDir string) *PMTools {
 	return &PMTools{pmDir: pmDir}
+}
+
+// SetSessionManager sets the session manager for session persistence tools
+func (p *PMTools) SetSessionManager(mgr *session.SessionManager, sessionID string) {
+	p.sessionMgr = mgr
+	p.sessionID = sessionID
 }
 
 // --- Arg Structs ---
@@ -103,6 +112,10 @@ type SummaryArgs struct{}
 
 type SearchTasksArgs struct {
 	Query string `json:"query" description:"Search query" required:"true"`
+}
+
+type SaveSessionArgs struct {
+	Label string `json:"label" description:"Optional label for this save (e.g., 'before-refactor')"`
 }
 
 // --- Tool Methods ---
@@ -457,6 +470,22 @@ func (p *PMTools) SearchTasks(ctx context.Context, args SearchTasksArgs) (*tool.
 		b.WriteString(fmt.Sprintf("  [%s] %s: %s (%s)\n", t.Priority, t.ID, t.Title, t.Status))
 	}
 	return tool.TextResponse(b.String()), nil
+}
+
+func (p *PMTools) SaveSession(ctx context.Context, args SaveSessionArgs) (*tool.ToolResponse, error) {
+	if p.sessionMgr == nil {
+		return tool.TextResponse("Session persistence not configured"), nil
+	}
+
+	saveID := p.sessionID
+	if args.Label != "" {
+		saveID = args.Label
+	}
+
+	if err := p.sessionMgr.Save(ctx, saveID); err != nil {
+		return nil, err
+	}
+	return tool.TextResponse(fmt.Sprintf("Session saved as '%s'", saveID)), nil
 }
 
 func removeStr(s []string, v string) []string {

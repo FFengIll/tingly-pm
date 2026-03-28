@@ -9,13 +9,16 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/tingly-dev/tingly-agentscope/pkg/agent"
 	"github.com/tingly-dev/tingly-agentscope/pkg/memory"
 	"github.com/tingly-dev/tingly-agentscope/pkg/message"
 	anthropic "github.com/tingly-dev/tingly-agentscope/pkg/model/anthropic"
+	"github.com/tingly-dev/tingly-agentscope/pkg/session"
 	"github.com/tingly-dev/tingly-agentscope/pkg/tool"
 	"github.com/tingly-dev/tingly-agentscope/pkg/types"
 
@@ -23,6 +26,8 @@ import (
 	"github.com/FFengIll/tingly-pm/prompt"
 	pmtools "github.com/FFengIll/tingly-pm/tools"
 )
+
+const sessionID = "default"
 
 func main() {
 	mode := flag.String("mode", "chat", "run mode: 'chat' (interactive), 'run' (stdio json), 'serve' (http)")
@@ -40,10 +45,21 @@ func main() {
 
 	cfg := loadConfig(*configDir)
 
-	ag, err := createAgent(pmDir, cfg)
+	ag, sessionMgr, err := createAgent(pmDir, cfg)
 	if err != nil {
 		log.Fatalf("failed to create agent: %v", err)
 	}
+
+	// Signal handler for graceful session save
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		if err := sessionMgr.Save(context.Background(), sessionID); err != nil {
+			log.Printf("warning: failed to save session on exit: %v", err)
+		}
+		os.Exit(0)
+	}()
 
 	switch *mode {
 	case "serve":
@@ -92,9 +108,9 @@ func loadConfig(dir string) *Config {
 	return cfg
 }
 
-func createAgent(pmDir string, cfg *Config) (*agent.ReActAgent, error) {
+func createAgent(pmDir string, cfg *Config) (*agent.ReActAgent, *session.SessionManager, error) {
 	if cfg.APIKey == "" {
-		return nil, fmt.Errorf("api_key required (set in config.json or ANTHROPIC_API_KEY env)")
+		return nil, nil, fmt.Errorf("api_key required (set in config.json or ANTHROPIC_API_KEY env)")
 	}
 
 	llm, err := anthropic.NewClient(&anthropic.Config{
@@ -104,18 +120,32 @@ func createAgent(pmDir string, cfg *Config) (*agent.ReActAgent, error) {
 		MaxTokens: cfg.MaxTokens,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create model: %w", err)
+		return nil, nil, fmt.Errorf("failed to create model: %w", err)
 	}
 
 	// Tools
 	toolkit := tool.NewToolkit()
 	pt := pmtools.NewPMTools(pmDir)
 	if err := toolkit.RegisterAll(pt); err != nil {
-		return nil, fmt.Errorf("failed to register tools: %w", err)
+		return nil, nil, fmt.Errorf("failed to register tools: %w", err)
 	}
 
 	// Memory
 	mem := memory.NewHistory(500)
+
+	// Session persistence
+	sessionDir := filepath.Join(pmDir, "sessions")
+	jsonSession := session.NewJSONSession(sessionDir)
+	sessionMgr := session.NewSessionManager(jsonSession)
+	sessionMgr.RegisterModule("memory", mem)
+
+	// Auto-restore: load previous session if it exists
+	ctx := context.Background()
+	if err := sessionMgr.Load(ctx, sessionID, true); err != nil {
+		log.Printf("warning: failed to restore session: %v", err)
+	} else if mem.Size() > 0 {
+		log.Printf("session restored (%d messages)", mem.Size())
+	}
 
 	// Agent
 	ag := agent.NewReActAgent(&agent.ReActAgentConfig{
@@ -127,7 +157,19 @@ func createAgent(pmDir string, cfg *Config) (*agent.ReActAgent, error) {
 		MaxIterations: 10,
 	})
 
-	return ag, nil
+	// Pass session manager to tools so save_session tool can use it
+	pt.SetSessionManager(sessionMgr, sessionID)
+
+	// Auto-save hook: save session after every agent reply
+	ag.RegisterHook(types.HookTypeLoopComplete, "auto-save-session",
+		func(ctx context.Context, _ agent.Agent, msg *message.Msg, hookCtx *agent.LoopCompleteContext) error {
+			if err := sessionMgr.Save(context.Background(), sessionID); err != nil {
+				log.Printf("warning: failed to auto-save session: %v", err)
+			}
+			return nil
+		})
+
+	return ag, sessionMgr, nil
 }
 
 func runChat(ag *agent.ReActAgent) {
@@ -215,7 +257,6 @@ func runHTTP(ag *agent.ReActAgent, addr string) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"content": resp.GetTextContent(),

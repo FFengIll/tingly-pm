@@ -16,6 +16,7 @@ func EnsureInit(pmDir string) error {
 		filepath.Join(pmDir, "tasks"),
 		filepath.Join(pmDir, "archive"),
 		filepath.Join(pmDir, "reports"),
+		filepath.Join(pmDir, "sessions"),
 	}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0755); err != nil {
