@@ -52,6 +52,8 @@ tingly-pm/
 │   ├── report.go        # Summary + daily/weekly report generation
 │   └── board.go         # EnsureInit (directory + git setup)
 └── .pm/                 # Runtime data (tasks/, archive/, members.json, timeline.jsonl)
+├── .eval/               # Eval loop artifacts (round-N/ with reports, decisions)
+└── eval-loop.sh         # Outer loop driver (triggers claude -p per round)
 ```
 
 ### Impact Ranking

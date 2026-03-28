@@ -14,6 +14,15 @@ Treat an agent (prompt + tools + config) as a trainable subject. An external dri
 Modify → Build → Execute → Observe → Evaluate → Commit or Revert → Repeat
 ```
 
+## Directory Convention
+
+| Directory | Purpose | Managed by |
+|-----------|---------|------------|
+| `.eval/` | Per-round artifacts (baseline results, experiment reports, decisions) | Claude Code (each round writes here) |
+| `.pm/` | Agent runtime data (tasks, sessions, config) | Agent itself |
+
+`.eval/round-{N}/` contains everything from round N: subagent reports, pass rates, commit or revert decision.
+
 ## v2 Key Changes
 
 | Change | What | Why |
