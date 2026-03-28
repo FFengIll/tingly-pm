@@ -72,24 +72,65 @@ Write per-round artifacts there (baseline results, experiment reports, etc).
 EOF
 }
 
+# --- Banner ---
+echo "╔══════════════════════════════════════════╗"
+echo "║       eval-loop · Claude Code           ║"
+echo "╚══════════════════════════════════════════╝"
+echo ""
+echo "  Working directory : ${SCRIPT_DIR}"
+echo "  Rounds            : ${ROUNDS}"
+echo "  Model             : ${MODEL:-<default>}"
+echo "  Prompt file       : ${PROMPT_FILE:-<built-in>}"
+echo "  Dry run           : ${DRY_RUN}"
+echo "  Output dir        : ${SCRIPT_DIR}/.eval/"
+echo ""
+
+if [[ "$DRY_RUN" == true ]]; then
+  echo "  *** DRY RUN — no commands will be executed ***"
+  echo ""
+fi
+
+# Ensure output directory exists
+if [[ "$DRY_RUN" == false ]]; then
+  mkdir -p "${SCRIPT_DIR}/.eval"
+fi
+
 MODEL_FLAG=""
 [[ -n "$MODEL" ]] && MODEL_FLAG="--model $MODEL"
 
-# Loop
+START_TIME=$(date +%s)
+
+# --- Loop ---
 for i in $(seq 1 "$ROUNDS"); do
-  echo ""
-  echo "══ ROUND ${i}/${ROUNDS} ══"
+  echo "─────────────────────────────────────────────"
+  echo "  ROUND ${i}/${ROUNDS}"
+  echo "─────────────────────────────────────────────"
 
   if [[ "$DRY_RUN" == true ]]; then
-    echo "[DRY RUN] claude -p${MODEL_FLAG:+ $MODEL_FLAG}"
-    echo "[DRY RUN] prompt: $(build_prompt $i $ROUNDS | head -3)..."
+    echo "  [DRY RUN] claude -p${MODEL_FLAG:+ $MODEL_FLAG}"
+    echo "  [DRY RUN] prompt preview: $(build_prompt $i $ROUNDS | head -1)..."
+    echo ""
     continue
   fi
 
-  build_prompt "$i" "$ROUNDS" | claude -p $MODEL_FLAG 2>&1 | tee .eval/round-${i}.log
+  ROUND_START=$(date +%s)
 
-  echo "── ROUND ${i} done ──"
+  build_prompt "$i" "$ROUNDS" | claude -p $MODEL_FLAG 2>&1 | tee "${SCRIPT_DIR}/.eval/round-${i}.log"
+
+  ROUND_END=$(date +%s)
+  ROUND_ELAPSED=$(( ROUND_END - ROUND_START ))
+
+  echo ""
+  echo "  ✓ Round ${i} done (${ROUND_ELAPSED}s)"
+  echo ""
 done
 
-echo ""
-echo "DONE. ${ROUNDS} rounds completed."
+END_TIME=$(date +%s)
+TOTAL_ELAPSED=$(( END_TIME - START_TIME ))
+TOTAL_MIN=$(( TOTAL_ELAPSED / 60 ))
+TOTAL_SEC=$(( TOTAL_ELAPSED % 60 ))
+
+echo "═══════════════════════════════════════════"
+echo "  DONE. ${ROUNDS} round(s) completed in ${TOTAL_MIN}m ${TOTAL_SEC}s"
+echo "  Logs: ${SCRIPT_DIR}/.eval/round-{1..${ROUNDS}}.log"
+echo "═══════════════════════════════════════════"
