@@ -17,6 +17,7 @@ ROUNDS=4
 MODEL=""
 PROMPT_FILE=""
 DRY_RUN=false
+VERBOSE=true
 
 usage() {
   cat <<'EOF'
@@ -26,6 +27,8 @@ Options:
   -n, --rounds <N>      Number of rounds (default: 4)
   -m, --model <model>   Claude model (omit for default)
   -p, --prompt <file>   Custom prompt file
+  -v, --verbose         Show Claude's intermediate steps (default: on)
+      --no-verbose       Hide intermediate steps, output only final result
       --dry-run         Print commands without executing
   -h, --help            Show help
 
@@ -43,6 +46,8 @@ while [[ $# -gt 0 ]]; do
     -m|--model)    MODEL="$2";      shift 2 ;;
     -p|--prompt)   PROMPT_FILE="$2"; shift 2 ;;
     --dry-run)     DRY_RUN=true;    shift ;;
+    --no-verbose)  VERBOSE=false;   shift ;;
+    -v|--verbose)   VERBOSE=true;    shift ;;
     -h|--help)     usage ;;
     *) echo "Unknown option: $1"; usage ;;
   esac
@@ -82,6 +87,7 @@ echo "  Rounds            : ${ROUNDS}"
 echo "  Model             : ${MODEL:-<default>}"
 echo "  Prompt file       : ${PROMPT_FILE:-<built-in>}"
 echo "  Dry run           : ${DRY_RUN}"
+echo "  Verbose           : ${VERBOSE}"
 echo "  Output dir        : ${SCRIPT_DIR}/.eval/"
 echo ""
 
@@ -97,6 +103,8 @@ fi
 
 MODEL_FLAG=""
 [[ -n "$MODEL" ]] && MODEL_FLAG="--model $MODEL"
+VERBOSE_FLAG=""
+[[ "$VERBOSE" == true ]] && VERBOSE_FLAG="--verbose"
 
 START_TIME=$(date +%s)
 
@@ -107,7 +115,7 @@ for i in $(seq 1 "$ROUNDS"); do
   echo "─────────────────────────────────────────────"
 
   if [[ "$DRY_RUN" == true ]]; then
-    echo "  [DRY RUN] claude -p${MODEL_FLAG:+ $MODEL_FLAG}"
+    echo "  [DRY RUN] claude -p${MODEL_FLAG:+ $MODEL_FLAG}${VERBOSE_FLAG:+ $VERBOSE_FLAG}"
     echo "  [DRY RUN] prompt preview: $(build_prompt $i $ROUNDS | head -1)..."
     echo ""
     continue
@@ -115,7 +123,7 @@ for i in $(seq 1 "$ROUNDS"); do
 
   ROUND_START=$(date +%s)
 
-  build_prompt "$i" "$ROUNDS" | claude -p $MODEL_FLAG 2>&1 | tee "${SCRIPT_DIR}/.eval/round-${i}.log"
+  build_prompt "$i" "$ROUNDS" | claude -p $MODEL_FLAG $VERBOSE_FLAG 2>&1 | tee "${SCRIPT_DIR}/.eval/round-${i}.log"
 
   ROUND_END=$(date +%s)
   ROUND_ELAPSED=$(( ROUND_END - ROUND_START ))
