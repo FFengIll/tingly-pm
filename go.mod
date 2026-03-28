@@ -2,7 +2,7 @@ module github.com/FFengIll/tingly-pm
 
 go 1.25.6
 
-require github.com/tingly-dev/tingly-agentscope v0.260327.1030
+require github.com/tingly-dev/tingly-agentscope v0.260328.1700
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.27.1 // indirect
