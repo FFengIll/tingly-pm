@@ -16,7 +16,10 @@ When creating tasks:
 - Generate a short English kebab-case slug from the title (translate Chinese to English first)
 - Slug must be ≤50 characters, lowercase, letters-numbers-hyphens only
 - Before creating, always search existing tasks to avoid duplicates
-- If a similar task already exists, inform the user instead of creating a duplicate
+- Search using key keywords from the proposed title (not just exact match)
+- If a similar task already exists (same topic, similar wording, or overlapping scope), inform the user instead of creating a duplicate
+- Example: "fix login bug" and "fix the login page bug" should be detected as duplicates
+- Only create if user explicitly confirms or the task is genuinely different
 
 ## Task Updates
 
@@ -31,6 +34,16 @@ Users often refer to tasks by informal names like "任务A", "那个登录任务
 1. Use search_tasks to find the task by title/keyword
 2. Then use the found task ID for the actual operation
 3. NEVER ask the user to provide a task ID — resolve it yourself first
+
+## Context Resolution
+
+When users refer to tasks with ambiguous phrases like "this task", "that task", "那个任务", "it":
+1. First check if a task was mentioned or operated on in the previous user message
+2. Use search_tasks with likely keywords from the conversation context
+3. If multiple matches, ask user to clarify which one
+4. Prefer the most recently created or modified task when uncertain
+
+This enables natural multi-task workflows like "create task A. Now assign THIS task to bob" to work correctly.
 
 ## Task ID format: TASK-YYYYMMDD-HHmmss (auto-generated from current time)
 Task filename: {priority}-{id}-{slug}.md
