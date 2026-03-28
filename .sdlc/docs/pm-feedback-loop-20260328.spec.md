@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-28
 **Scope:** tingly-pm self-improvement via external driver (Claude Code)
-**Status:** Completed (3 rounds)
+**Status:** Active (3 rounds completed)
 
 ---
 
@@ -21,29 +21,60 @@ This is **not** a feature of tingly-pm itself. It is an external improvement pro
 ## The Loop
 
 ```
-┌──────────────────────────────────────────────────────┐
-│              Claude Code (the driver)                 │
-│                                                       │
-│  1. Identify what to improve                          │
-│  2. Hypothesis: what change will fix it               │
-│  3. Edit prompt.go / tools.go / main.go               │
-│  4. go build . && go test ./...                       │
-│  5. Run tingly-pm with test input via stdio           │
-│  6. Observe output                                   │
-│  7. Good? → git commit                                │
-│     Bad? → git revert, try different approach         │
-│  8. Repeat                                           │
-└──────────────────────────────────────────────────────┘
-         │                            ▲
-         ▼                            │
-   ┌───────────┐              ┌─────────────┐
-   │ tingly-pm │──stdout────▶│ evaluation  │
-   │ (subject) │              │             │
-   └───────────┘              └─────────────┘
-         │
-         ▼
-   .pm/ (task board state change)
+┌──────────────────────────────────────────────────────────────┐
+│                Claude Code (the driver)                       │
+│                                                               │
+│  Round N:                                                     │
+│  ┌─────────────────────────────────────────────────────┐     │
+│  │ 1. Identify N experiment hypotheses                  │     │
+│  │ 2. Launch N subagents in parallel (worktree each)    │     │
+│  │    Each subagent: edit → build → test → run → record │     │
+│  │ 3. Collect all results                               │     │
+│  │ 4. Evaluate: which passed, which failed, patterns    │     │
+│  │ 5. Apply good changes to main branch, commit        │     │
+│  │ 6. Record learnings → inform next round              │     │
+│  └─────────────────────────────────────────────────────┘     │
+│         ▲                                                     │
+│         └─────────────────────────────────────────────────────┘
+│                                                               │
+│  Subagent (per experiment):                                   │
+│  ┌─────────────────────────────────────────────────────┐     │
+│  │ a. Edit source in isolated worktree                   │     │
+│  │ b. go build . && go test ./...                       │     │
+│  │ c. Run tingly-pm with test input via stdio           │     │
+│  │ d. Record: input, output, pass/fail, observations    │     │
+│  └─────────────────────────────────────────────────────┘     │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+### Parallel Batch Execution (from Round 4+)
+
+Instead of running experiments sequentially one-by-one, launch multiple subagents in parallel using git worktrees. Each subagent runs in isolation, then results are collected and evaluated together.
+
+```
+Round N:
+  ┌──────────┐  ┌──────────┐  ┌──────────┐
+  │ Exp A    │  │ Exp B    │  │ Exp C    │   ← parallel subagents
+  │ (worktree│  │ (worktree│  │ (worktree│
+  │  branch) │  │  branch) │  │  branch) │
+  └────┬─────┘  └────┬─────┘  └────┬─────┘
+       │              │              │
+       ▼              ▼              ▼
+  ┌──────────────────────────────────────┐
+  │       Collect & Evaluate             │   ← main context
+  │  Compare results, identify patterns  │
+  │  Apply winners, record learnings     │
+  └──────────────────────────────────────┘
+                      │
+                      ▼
+               Round N+1 (informed by N's learnings)
+```
+
+**Benefits:**
+- Speed: N experiments run in parallel instead of N × sequential time
+- Isolation: each experiment in its own worktree, no interference
+- Better evaluation: seeing all results together reveals patterns
+- Reduced confirmation bias: decisions based on comparison, not single outcome
 
 ## Execution Interface
 
@@ -248,6 +279,8 @@ echo '{"content":"..."}' | ./tingly-pm -mode run -dir /tmp/test-pm-rN -config .p
 ### Commits on main
 
 ```
+a1f14bc docs: add parallel batch execution methodology to feedback spec
+ab5cc03 feat: list_tasks age+grouping, show_blockers merge, list_timeline tool
 5596371 docs: record round 2-3 experiment results in feedback spec
 2d098ec feat: add task reference resolution instructions to prompt
 157ef7e feat: tune priority mapping, remove redundant tool, fix search + blockers
@@ -260,19 +293,95 @@ echo '{"content":"..."}' | ./tingly-pm -mode run -dir /tmp/test-pm-rN -config .p
 |------|---------|
 | `main.go` | +2 lines: disable console output for run/serve |
 | `prompt/prompt.go` | Rewritten: 27 lines → ~60 lines, 6 structured sections |
-| `tools/tools.go` | Removed assign_task, fixed search_tasks (archive), fixed show_blockers |
+| `tools/tools.go` | Removed assign_task + show_blockers, added list_timeline, list_tasks grouping+age |
+| `board/timeline.go` | +26 lines: ListEvents() for reverse-chronological reads |
 
-### Tools: 14 → 13
+### Tools: 14 → 12
 
 | Removed | Reason |
 |---------|--------|
 | `assign_task` | Redundant with `update_task(assignee=...)` |
+| `show_blockers` | Merged into `list_tasks(show_blockers=true)` |
+
+| Added | Purpose |
+|-------|---------|
+| `list_timeline` | Read recent timeline events |
+
+### Methodology Evolution
+
+| Rounds | Approach | Speed |
+|--------|----------|-------|
+| 1–3 | Sequential (one experiment at a time) | ~5 min per experiment |
+| 4+ | Parallel subagents (N experiments simultaneously) | ~2.5 min total for 3 experiments |
 
 ### Remaining Improvement Opportunities
 
 1. **Batch operations** — create multiple tasks in one message (prompt-only, model dependent)
 2. **`summary` vs `list_tasks` overlap** — summary provides counts, list provides details; could merge
-3. **`show_blockers` vs `list_tasks(status=blocked)`** — now overlapping; could merge
-4. **Proactive behavior** — agent could suggest actions (e.g., "task X has been blocked for 3 days")
-5. **Timeline queries** — no tool to read timeline events (only append)
-6. **Multi-project support** — agent managing multiple `.pm/` directories
+3. **Proactive behavior** — agent could suggest actions (e.g., "task X has been blocked for 3 days")
+4. **Multi-project support** — agent managing multiple `.pm/` directories
+
+---
+
+## Round 4 — Parallel Batch Execution
+
+**Date:** 2026-03-28
+**Method:** First round using parallel subagents (3 experiments simultaneously)
+**Commits:** `ab5cc03`, `a1f14bc`
+
+### Experiments (parallel)
+
+| Exp | Hypothesis | Change |
+|-----|-----------|--------|
+| A | `show_blockers` is redundant | Merge into `list_tasks` as `show_blockers` filter |
+| B | Timeline is write-only | Add `list_timeline` tool + `board.ListEvents()` |
+| C | `list_tasks` output is plain | Add priority grouping headers + task age |
+
+### Results (all 3 ran in parallel)
+
+| Exp | Build | Tests | Result | Verdict |
+|-----|-------|-------|--------|---------|
+| A | PASS | PASS | Agent used `list_tasks(show_blockers=true)` | **PASS** |
+| B | PASS | PASS | Agent listed timeline events with timestamps | **PASS** |
+| C | PASS | PASS | Output: `=== P0 ===` headers + `<1h ago` age | **PASS** |
+
+### Integration Test (all features combined)
+
+Multi-message session with 8 sequential requests testing all features:
+1. Created 4 tasks (p0-p3) — all correct priorities
+2. Added dependency — resolved by name, status auto-updated
+3. Listed tasks — grouped by priority with headers
+4. Timeline — newest-first with timestamps
+5. Blocked tasks — found via list_tasks filter
+
+### Changes Applied
+
+1. **`tools/tools.go`**:
+   - `ListTasksArgs`: added `ShowBlockers bool` field
+   - `ListTasks`: filter by blocked_by, group output by priority, include age
+   - Added `ageSince()` helper for human-readable duration
+   - Added `ListTimelineArgs` struct + `ListTimeline` method
+   - Commented out `ShowBlockersArgs` + `ShowBlockers` (replaced by filter)
+
+2. **`board/timeline.go`**:
+   - Added `ListEvents(pmDir, limit)` — reverse-chronological read with limit
+
+### Tools: 13 → 12
+
+| Removed | Reason |
+|---------|--------|
+| `show_blockers` | Merged into `list_tasks(show_blockers=true)` |
+
+### Added
+
+| Tool | Purpose |
+|------|---------|
+| `list_timeline` | Read recent timeline events (was write-only before) |
+
+### Key Learnings
+
+- **Parallel subagents work well** — 3 experiments completed in ~2.5min total instead of ~7.5min sequential
+- **File conflicts are manageable** — Exp A and C both modified ListTasks; the subagent for C ran after A had already landed, so it incorporated A's changes naturally
+- **Integration testing after merge is essential** — individual passes don't guarantee combined correctness
+- **Timeline was a gap** — agent could write events but never read them; filling this gap unlocked a useful capability
+- **Output formatting matters** — priority grouping makes list output scannable at a glance
