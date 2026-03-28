@@ -83,8 +83,22 @@ type RegisterMemberArgs struct {
 	Labels     string `json:"labels" description:"Comma-separated capability labels"`
 }
 
+type RemoveMemberArgs struct {
+	Name string `json:"name" description:"Member name to remove" required:"true"`
+}
+
+type UpdateMemberArgs struct {
+	Name       string `json:"name" description:"Member name to update" required:"true"`
+	MemberType string `json:"member_type" description:"New type: human or agent"`
+	Labels     string `json:"labels" description:"Comma-separated capability labels (replaces existing)"`
+}
+
 type ListMembersArgs struct {
 	MemberType string `json:"member_type" description:"Filter by type: human or agent"`
+}
+
+type SearchMembersArgs struct {
+	Labels string `json:"labels" description:"Comma-separated labels to search for (fuzzy match)"`
 }
 
 type AssignTaskArgs struct {
@@ -369,6 +383,35 @@ func (p *PMTools) RegisterMember(ctx context.Context, args RegisterMemberArgs) (
 	return tool.TextResponse(fmt.Sprintf("Registered %s (%s)", args.Name, args.MemberType)), nil
 }
 
+func (p *PMTools) UpdateMember(ctx context.Context, args UpdateMemberArgs) (*tool.ToolResponse, error) {
+	var labels []string
+	if args.Labels != "" {
+		for _, l := range strings.Split(args.Labels, ",") {
+			labels = append(labels, strings.TrimSpace(l))
+		}
+	}
+
+	if err := board.UpdateMember(p.pmDir, args.Name, args.MemberType, labels); err != nil {
+		return nil, err
+	}
+
+	msg := fmt.Sprintf("Updated %s", args.Name)
+	if args.MemberType != "" {
+		msg += fmt.Sprintf(" (type: %s)", args.MemberType)
+	}
+	if len(labels) > 0 {
+		msg += fmt.Sprintf(" (labels: %s)", strings.Join(labels, ", "))
+	}
+
+	board.AppendEvent(p.pmDir, &board.TimelineEvent{
+		Event: "member_updated",
+		Name:  args.Name,
+		By:    "pm",
+	})
+
+	return tool.TextResponse(msg), nil
+}
+
 func (p *PMTools) ListMembers(ctx context.Context, args ListMembersArgs) (*tool.ToolResponse, error) {
 	members, err := board.ListMembers(p.pmDir, args.MemberType)
 	if err != nil {
@@ -377,6 +420,27 @@ func (p *PMTools) ListMembers(ctx context.Context, args ListMembersArgs) (*tool.
 
 	if len(members) == 0 {
 		return tool.TextResponse("No members found."), nil
+	}
+
+	var b strings.Builder
+	for _, m := range members {
+		labels := ""
+		if len(m.Labels) > 0 {
+			labels = " [" + strings.Join(m.Labels, ", ") + "]"
+		}
+		b.WriteString(fmt.Sprintf("- %s (%s)%s\n", m.Name, m.Type, labels))
+	}
+	return tool.TextResponse(b.String()), nil
+}
+
+func (p *PMTools) SearchMembers(ctx context.Context, args SearchMembersArgs) (*tool.ToolResponse, error) {
+	members, err := board.SearchMembers(p.pmDir, args.Labels)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(members) == 0 {
+		return tool.TextResponse("No members found matching those labels."), nil
 	}
 
 	var b strings.Builder
@@ -632,4 +696,18 @@ func removeStr(s []string, v string) []string {
 		}
 	}
 	return result
+}
+
+func (p *PMTools) RemoveMember(ctx context.Context, args RemoveMemberArgs) (*tool.ToolResponse, error) {
+	if err := board.RemoveMember(p.pmDir, args.Name); err != nil {
+		return nil, err
+	}
+
+	board.AppendEvent(p.pmDir, &board.TimelineEvent{
+		Event: "member_removed",
+		Name:  args.Name,
+		By:    "pm",
+	})
+
+	return tool.TextResponse(fmt.Sprintf("Removed member %s", args.Name)), nil
 }

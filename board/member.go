@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Member represents a team member
@@ -85,4 +86,88 @@ func ListMembers(pmDir, memberType string) ([]Member, error) {
 		}
 	}
 	return result, nil
+}
+
+// SearchMembers returns members matching any of the given labels
+func SearchMembers(pmDir string, labels string) ([]Member, error) {
+	mf, err := ReadMembers(pmDir)
+	if err != nil {
+		return nil, err
+	}
+
+	if labels == "" {
+		return mf.Members, nil
+	}
+
+	searchLabels := strings.Split(labels, ",")
+	var result []Member
+	for _, m := range mf.Members {
+		for _, sl := range searchLabels {
+			sl = strings.TrimSpace(sl)
+			sl = strings.ToLower(sl)
+			for _, ml := range m.Labels {
+				if strings.Contains(strings.ToLower(ml), sl) {
+					result = append(result, m)
+					break
+				}
+			}
+		}
+	}
+	return result, nil
+}
+
+// UpdateMember updates an existing member's type and/or labels
+func UpdateMember(pmDir, name string, memberType string, labels []string) error {
+	mf, err := ReadMembers(pmDir)
+	if err != nil {
+		return err
+	}
+
+	found := false
+	for i, m := range mf.Members {
+		if m.Name == name {
+			found = true
+			if memberType != "" {
+				if memberType != "human" && memberType != "agent" {
+					return fmt.Errorf("type must be 'human' or 'agent', got: %s", memberType)
+				}
+				mf.Members[i].Type = memberType
+			}
+			if labels != nil {
+				mf.Members[i].Labels = labels
+			}
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("member %s not found", name)
+	}
+
+	return WriteMembers(pmDir, mf)
+}
+
+// RemoveMember removes a member from the registry
+func RemoveMember(pmDir, name string) error {
+	mf, err := ReadMembers(pmDir)
+	if err != nil {
+		return err
+	}
+
+	found := false
+	var newMembers []Member
+	for _, m := range mf.Members {
+		if m.Name != name {
+			newMembers = append(newMembers, m)
+		} else {
+			found = true
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("member %s not found", name)
+	}
+
+	mf.Members = newMembers
+	return WriteMembers(pmDir, mf)
 }

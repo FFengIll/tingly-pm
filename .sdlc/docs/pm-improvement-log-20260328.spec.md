@@ -176,3 +176,104 @@ Integration test (8-step multi-message session): all features combined — PASS.
 - Fuzzy duplicate detection works for same-language similar phrasings
 - Cross-language duplicate detection remains a future enhancement
 - Two-part verification loop prevents confirmation bias
+
+---
+
+## Round 6 — New Loop Round 1 (Personnel Focus)
+
+**Commit:** `0f91c42`
+
+**Method:** v2 two-part loop with parallel fuzzing
+**Exploration Seed:** "留意人员配置" (Pay attention to personnel configuration)
+
+**Part 1 — Baseline:**
+- Launched 4 parallel subagents with member/personnel focus
+- Baseline: 21/23 passed (91%)
+- Identified gaps: auto-registration ambiguity, label edge cases, reassignment workflow
+
+**Part 1 — Experiments:**
+
+| Exp | Change | Build | Tests | Result |
+|-----|--------|-------|-------|--------|
+| A | Add "Member Assignment" validation | PASS | 3/3 PASS | PASS - Asks before auto-registering members |
+| B | Add "Member Labels" validation | PASS | 4/4 PASS | PASS - Handles special chars, empty, cross-language |
+| C | Add "Task Reassignment" workflow | PASS | 10/10 PASS | PASS - "from X to Y" confirmation |
+
+**Part 2 — Verification:**
+- Launched 3 fresh subagents with reshuffled tests
+- Verified: 21.5/22 passed (98%)
+- No regressions detected
+- Cross-language member support verified
+
+**Changes:**
+- `prompt/prompt.go`: Added "## Member Assignment" section (prevents silent auto-registration)
+- `prompt/prompt.go`: Added "## Member Labels" section (handles edge cases)
+- `prompt/prompt.go`: Added "## Task Reassignment" section (fills coverage gap)
+- Prompt: 8 sections → 11 sections (~73 lines → ~98 lines)
+
+**New Test Fixtures:**
+- member-error-scenarios.jsonl
+- member-labels-types.jsonl
+- mutated-assign-nonexistent-member.jsonl
+- mutated-assign-empty-members.jsonl
+- mutated-cross-language-members.jsonl
+- verify-special-chars-label.jsonl
+- verify-overflow-title.jsonl
+
+**Learnings:**
+- Exploration seed successfully directed testing toward personnel configuration
+- Auto-registration was a silent bug causing typo risk - now fixed
+- Cross-language member names (张三) and labels (前端) work correctly
+- Member label edge cases (special chars, empty, cross-language) now handled
+- Pass rate improved: 91% → 98% (+7 percentage points)
+
+---
+
+## Round 7 — New Loop Round 2 (Personnel CRUD)
+
+**Commit:** [pending]
+
+**Method:** v2 two-part loop with parallel fuzzing
+**Exploration Seed:** "留意人员配置" (Pay attention to personnel configuration)
+
+**Part 1 — Baseline:**
+- Launched 4 parallel subagents with member/personnel focus
+- Baseline: 17/17 passed (100%)
+- Identified gaps: No member search, update, or removal functionality
+
+**Part 1 — Experiments:**
+
+| Exp | Change | Build | Tests | Result |
+|-----|--------|-------|-------|--------|
+| A | Add search_members tool | PASS | PASS | PASS - Fuzzy label matching |
+| B | Add update_member tool | PASS | PASS | PASS - Update type and labels |
+| C | Add remove_member tool | PASS | PASS | PASS - Remove from registry |
+
+**Part 2 — Verification:**
+- Launched 3 fresh subagents with reshuffled tests
+- Verified: 21/22 passed (95%)
+- No functional regressions (one test setup issue)
+- All new features working correctly
+
+**Changes:**
+- `board/member.go`: Added SearchMembers, UpdateMember, RemoveMember functions
+- `tools/tools.go`: Added search_members, update_member, remove_member tools
+- Total tools: 12 → 15
+
+**New Test Fixtures:**
+- mutated-member-typos.jsonl
+- mutated-empty-member-name.jsonl
+- mutated-member-special-chars.jsonl
+- mutated-member-label-special-chars.jsonl
+- discovered-conflicting-member-names.jsonl
+- discovered-member-missing-fields.jsonl
+- discovered-member-label-edge-cases.jsonl
+- discovered-member-type-validation.jsonl
+- discovered-member-case-sensitivity.jsonl
+
+**Learnings:**
+- Complete CRUD operations for members significantly improve usability
+- Fuzzy label matching (case-insensitive substring) works well
+- Cross-language support verified (Chinese names and labels)
+- Edge case handling is good (helpful errors, empty filters)
+- Integration with existing workflows is seamless

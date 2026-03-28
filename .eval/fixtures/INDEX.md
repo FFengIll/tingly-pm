@@ -35,6 +35,15 @@ Timeout by turn count: 1 turn=30s, 2-3 turns=60s, 4-5 turns=120s, 6+ turns=180s.
 | mutated-assign-nonexistent-member.jsonl | error | MUTATED FROM: create-task-assign → Assign to non-existent member |
 | mutated-assign-empty-members.jsonl | error | MUTATED FROM: create-task-assign → Assign to empty member list |
 | mutated-cross-language-members.jsonl | workflow | MUTATED FROM: workflow-create-assign-list → Cross-language member names |
+| mutated-member-typos.jsonl | member | MUTATED FROM: member-register-list → Member name typo (alic instead of alice) |
+| mutated-empty-member-name.jsonl | error | MUTATED FROM: member-register-list → Empty member name registration |
+| mutated-member-special-chars.jsonl | member | MUTATED FROM: member-register-list → Chinese character name (张三) |
+| mutated-member-label-special-chars.jsonl | member | MUTATED FROM: member-labels-types → Special characters in labels (前端@#$％) |
+| discovered-conflicting-member-names.jsonl | error | DISCOVERED: Duplicate member registration — rationale: Tests duplicate detection |
+| discovered-member-missing-fields.jsonl | error | DISCOVERED: Missing member name — rationale: Tests validation of required fields |
+| discovered-member-label-edge-cases.jsonl | member | DISCOVERED: Empty/malformed labels — rationale: Tests label handling edge cases |
+| discovered-member-type-validation.jsonl | error | DISCOVERED: Invalid member type — rationale: Tests type validation |
+| discovered-member-case-sensitivity.jsonl | member | DISCOVERED: Case sensitivity in names — rationale: Tests name matching policy |
 
 ## Multi-Turn (2+ messages)
 
