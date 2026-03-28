@@ -24,12 +24,17 @@ Timeout by turn count: 1 turn=30s, 2-3 turns=60s, 4-5 turns=120s, 6+ turns=180s.
 | list-tasks-empty.jsonl | list | Empty board listing |
 | search-tasks-by-title.jsonl | search | Full-text search by title keyword |
 | member-register-list.jsonl | member | Register member then list |
+| member-labels-types.jsonl | member | DISCOVERED: Register with labels & type filtering |
+| member-error-scenarios.jsonl | error | DISCOVERED: Duplicate registration & non-existent assignee |
 | error-empty-input.jsonl | error | Empty content handling |
 | error-invalid-taskid.jsonl | error | Get nonexistent task by ID |
 | language-english-input.jsonl | language | English input with priority filter |
 | report-daily.jsonl | report | Daily report generation |
 | timeline-recent.jsonl | timeline | Recent activity listing |
 | summary-stats.jsonl | summary | Quick project stats |
+| mutated-assign-nonexistent-member.jsonl | error | MUTATED FROM: create-task-assign → Assign to non-existent member |
+| mutated-assign-empty-members.jsonl | error | MUTATED FROM: create-task-assign → Assign to empty member list |
+| mutated-cross-language-members.jsonl | workflow | MUTATED FROM: workflow-create-assign-list → Cross-language member names |
 
 ## Multi-Turn (2+ messages)
 

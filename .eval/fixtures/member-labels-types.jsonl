@@ -1,0 +1,7 @@
+{"content": "注册成员alice，类型human，标签前端,react"}
+{"content": "注册成员bob，类型agent，标签后端,python"}
+{"content": "列出所有human类型成员"}
+{"content": "列出所有agent类型成员"}
+{"content": "创建任务：开发登录页面，分配给alice"}
+{"content": "创建任务：API开发，分配给bob"}
+{"content": "列出所有任务"}
