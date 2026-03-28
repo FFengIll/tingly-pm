@@ -69,81 +69,63 @@ tingly-pm/
 
 ## Baseline Test Suite
 
-Run this before every improvement round. Uses multi-message session for contextual tests.
+Run this before every improvement round. Uses JSONL fixture files for both single and multi-turn tests.
 
 ```bash
 # Setup
 mkdir -p /tmp/test-pm-baseline
 CONFIG="-config .pm"
 
-printf '{
-  "content": "创建一个任务：修复用户登录超时问题，高优先级"
-}
-{
-  "content": "再创建一个：修复用户登录超时问题，高优先级"
-}
-{
-  "content": "创建任务A：用户认证，p0"
-}
-{
-  "content": "创建任务B：登录页面，p1"
-}
-{
-  "content": "登录页面依赖用户认证"
-}
-{
-  "content": "把用户认证分配给alice，登录页面分配给bob"
-}
-{
-  "content": "用户认证完成了"
-}
-{
-  "content": "列出所有任务"
-}
-{
-  "content": "查看最近活动"
-}
-{
-  "content": "有哪些任务被阻塞了"
-}
-{
-  "content": "项目概况"
-}
-' | timeout 120 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG
+# Multi-turn: full workflow (create, dedup, dependency, assign, archive, list)
+cat .eval/fixtures/workflow-create-dep-archive.jsonl \
+  | timeout 120 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG 2>/dev/null
+
+# Multi-turn: context resolution by name
+cat .eval/fixtures/context-resolve-by-name.jsonl \
+  | timeout 60 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG 2>/dev/null
+
+# Multi-turn: implicit references (this/that task)
+cat .eval/fixtures/context-implicit-reference.jsonl \
+  | timeout 120 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG 2>/dev/null
+
+# Multi-turn: cross-language context
+cat .eval/fixtures/context-cross-language.jsonl \
+  | timeout 60 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG 2>/dev/null
 ```
 
 ### Expected Results
 
-| Step | Expected Behavior | What to Check |
-|------|-------------------|---------------|
-| 1. Create (Chinese, 紧急) | Title stays Chinese, priority = p0 | No English title, p0 not p1 |
-| 2. Duplicate | Refuses, references existing task | No second task created |
-| 3-4. Create A & B | Two tasks created with correct priorities | p0 and p1 respectively |
-| 5. Dependency | Resolves both by name, adds blocked_by | No "please provide task ID" |
-| 6. Multi-assign | Assigns both correctly | No field hallucination |
-| 7. Complete by name | Resolves → archives | Not asking for ID |
-| 8. List tasks | Priority groups (=== P0 ===), age shown | Scannable format |
-| 9. Timeline | Events listed newest-first | Timestamps present |
-| 10. Blocked tasks | Shows tasks with blocked_by | Uses list_tasks not removed tool |
-| 11. Summary | Contextual (mentions completed tasks) | Not generic template |
+See individual `.expect.md` files for per-turn grading criteria.
 
-### Single-Request Quick Tests
+| Fixture | Key Checks |
+|---------|------------|
+| workflow-create-dep-archive | Create p0/p1, dep by name, archive by name, clean list |
+| context-resolve-by-name | Create, update by name (no ID asked), list confirms |
+| context-implicit-reference | "第一个任务" resolves correctly, archives |
+| context-cross-language | Chinese create, English "first task" update works |
+
+### Single-Turn Quick Tests
 
 ```bash
 # Error handling
-echo '{"content":"update TASK-NONEXIST-12345 status to in_progress"}' \
+cat .eval/fixtures/update-task-nonexistent.jsonl \
   | timeout 30 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG 2>/dev/null
 # Expected: graceful error with suggestion
 
 # Empty input
-echo '{"content":""}' \
+cat .eval/fixtures/error-empty-input.jsonl \
   | timeout 30 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG 2>/dev/null
 # Expected: helpful intro message
 
 # English input
-echo '{"content":"Create a task: implement OAuth2, assign to bob, p1"}' \
+cat .eval/fixtures/create-task-english.jsonl \
   | timeout 30 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG 2>/dev/null
 # Expected: English response, correct priority
+
+# Summary
+cat .eval/fixtures/summary-stats.jsonl \
+  | timeout 30 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG 2>/dev/null
+# Expected: project stats
 ```
 
 ---
@@ -154,7 +136,7 @@ These are architectural limitations. Don't try to fix them via prompt.
 
 | Constraint | Why | Workaround |
 |------------|-----|-----------|
-| Stateless mode can't resolve task names | Each `echo \| tingly-pm` is a fresh process with no memory | Use multi-message session (`printf '...\n...'`) |
+| Stateless mode can't resolve task names | Each `echo \| tingly-pm` is a fresh process with no memory | Use JSONL fixture files (`cat fixture.jsonl \| tingly-pm`) |
 | Session persistence requires `.pm/sessions/` | Files only persist within same `.pm/` dir | Accept: cross-session context is lost |
 | Tool schema is auto-generated from Go struct tags | No manual schema control | Change the struct, rebuild |
 | Console formatter leaks to stdout in chat mode | `SetConsoleOutputEnabled` only affects `run`/`serve` | Accept: chat mode has ANSI output |
@@ -266,11 +248,14 @@ go test ./...                       # Must pass (board/ has tests)
 ### Run Tests
 
 ```bash
-# Single request (stateless)
-echo '{"content":"..."}' | ./tingly-pm -mode run -dir /tmp/test $CONFIG 2>/dev/null
+# Run a fixture (single or multi-turn)
+cat .eval/fixtures/{name}.jsonl | ./tingly-pm -mode run -dir /tmp/test $CONFIG 2>/dev/null
 
-# Multi-message session (stateful)
-printf '{"content":"..."}\n{"content":"..."}\n' | ./tingly-pm -mode run -dir /tmp/test $CONFIG 2>/dev/null
+# With output capture
+cat .eval/fixtures/{name}.jsonl | ./tingly-pm -mode run -dir /tmp/test $CONFIG 2>/dev/null | tee output.jsonl
+
+# Timeout by turns: 1=30s, 2-3=60s, 4-5=120s, 6+=180s
+cat .eval/fixtures/{name}.jsonl | timeout 60 ./tingly-pm -mode run -dir /tmp/test $CONFIG 2>/dev/null
 ```
 
 ### Config
@@ -291,6 +276,9 @@ CONFIG="-config .pm"
 ├── timeline.jsonl   # Append-only event log
 ├── reports/         # Generated reports
 └── sessions/        # Session persistence
+
+.eval/
+└── fixtures/        # Stream JSON test fixtures (*.jsonl + *.expect.md + INDEX.md)
 ```
 
 ---

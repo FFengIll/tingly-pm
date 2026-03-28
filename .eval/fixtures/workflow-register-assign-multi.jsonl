@@ -1,0 +1,6 @@
+{"content": "注册成员alice"}
+{"content": "注册成员bob"}
+{"content": "创建任务A：前端开发，p0"}
+{"content": "创建任务B：后端开发，p1"}
+{"content": "把前端开发分配给alice，后端开发分配给bob"}
+{"content": "列出所有任务"}

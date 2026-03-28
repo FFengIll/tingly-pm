@@ -62,89 +62,109 @@ PART 2: Verify (Independent Evaluation)
 
 ---
 
-## Test Feature Pool
+## Test Fixtures (Stream JSON)
 
-Define a pool of **known** independently testable features. This is a starting point, NOT an exhaustive list — subagents are encouraged to discover beyond it.
+Tests are defined as **JSONL fixture files** in `.eval/fixtures/`. Each line is one user message in the stream JSON protocol. The agent reads from stdin line by line, responds to stdout line by line — a file is just a replayable stream.
+
+See `.eval/fixtures/INDEX.md` for the full fixture manifest.
+
+### Stream JSON Protocol
 
 ```
-POOL = [
-  "create_task: chinese input",
-  "create_task: english input",
-  "create_task: duplicate detection",
-  "create_task: priority from keywords",
-  "create_task: assign on create",
-  "update_task: single field only",
-  "update_task: status change",
-  "update_task: nonexistent task",
-  "list_tasks: empty board",
-  "list_tasks: priority grouping",
-  "list_tasks: age display",
-  "list_tasks: blocker filter",
-  "search_tasks: by title",
-  "search_tasks: archived tasks",
-  "dependency: add and list",
-  "dependency: cycle detection",
-  "archive: done vs dropped",
-  "member: register and list",
-  "error: empty input",
-  "error: invalid task id",
-  "context: resolve by name",
-  "context: multi-step workflow",
-  "context: implicit references (this/that task)",
-  "language: input language matching",
-  "output: conciseness",
-  "report: daily generation",
-  "timeline: event ordering",
-]
+stdin  → {"content": "user message 1"}  \n  →  stdout: {"role": "assistant", "content": "reply 1"}  \n
+stdin  → {"content": "user message 2"}  \n  →  stdout: {"role": "assistant", "content": "reply 2"}  \n
+...
 ```
+
+Both sides are line-delimited JSON (JSONL/NDJSON). Session state persists across the stream.
+
+### Execution
+
+```bash
+# Run any fixture (single or multi-turn)
+cat .eval/fixtures/{name}.jsonl | timeout {N} ./tingly-pm -mode run -dir /tmp/test-{id} -config .pm 2>/dev/null
+
+# With output capture
+cat .eval/fixtures/{name}.jsonl | timeout {N} ./tingly-pm -mode run -dir /tmp/test-{id} -config .pm 2>/dev/null | tee /tmp/test-{id}.output.jsonl
+```
+
+Timeout by turn count: 1 turn=30s, 2-3 turns=60s, 4-5 turns=120s, 6+ turns=180s.
+
+### Fixture Types
+
+**Single-turn** (1 message per file):
+- `create-task-chinese.jsonl`, `create-task-english.jsonl`, `error-empty-input.jsonl`, etc.
+
+**Multi-turn** (2+ messages per file, with `.expect.md` for per-turn grading):
+- `context-resolve-by-name.jsonl` (3 turns), `workflow-create-dep-archive.jsonl` (5 turns), etc.
+
+### Initial Fixture Set
+
+25 fixtures total: 16 single-turn + 9 multi-turn. See `INDEX.md` for the full list. This is a starting point — subagents MUTATE and DISCOVER new fixtures each round.
+
+### Expectation Files
+
+Multi-turn fixtures have companion `.expect.md` files with per-turn grading criteria (prose, not machine-parseable). Subagents read these to grade each turn independently.
 
 ---
 
-## Random Selection + Mutation
+## Random Selection + Mutation (Fixture-Based)
 
 Each subagent has **three selection modes** chosen by probability:
 
 ```
 For each subagent:
-  1. Read the agent's prompt, tools, and codebase (understand the subject)
+  1. Read .eval/fixtures/INDEX.md for available fixtures
   2. Select mode by probability:
-     a. POOL_SAMPLE (60%) — pick a random subset from the pool
-     b. MUTATE (30%) — generate a VARIANT of a pool item
-        e.g., pool has "create_task: chinese input"
-             → mutate to "create_task: mixed chinese+english title"
-             → mutate to "create_task: extremely long title (>200 chars)"
-     c. DISCOVER (10%) — propose an entirely NEW feature/edge case
-        e.g., "what happens if user assigns a task to a non-existent member?"
+     a. POOL_SAMPLE (60%) — pick random fixtures from INDEX.md
+     b. MUTATE (30%) — copy an existing .jsonl, modify lines, save as new fixture
+        e.g., copy workflow-create-dep-archive.jsonl
+             → insert an error turn between turns 2 and 3
+             → save as mutated-dep-archive-with-error.jsonl
+     c. DISCOVER (10%) — write a brand new .jsonl fixture from scratch
+        e.g., "what happens with conflicting priority updates?"
+        → write a new stream capturing that scenario
+```
+
+### Per-Subagent Budget
+
+```
+  - Single-turn fixtures: 3-5
+  - Multi-turn fixtures: 1-2
+  - Mutation/Discovery: 0-2 new fixtures created
+  - Total turns cap: ~20 turns per subagent
 ```
 
 ### Mutation Rules
 
-1. **Read the agent's source** to understand boundaries
-2. **Vary one dimension**: input format, sequence order, data volume, language, state
-3. **Construct a valid test case**: input, execution command, expected behavior
-4. **Label clearly**: "MUTATED FROM: {pool_item} → {new_test_description}"
+1. **Copy existing fixture** to a new `.jsonl` file
+2. **Vary one dimension**: insert error turn, change language, reorder sequence, add redundant turn
+3. **Write `.expect.md`** if the mutated fixture is multi-turn
+4. **Update INDEX.md** with the new entry
+5. **Label**: "MUTATED FROM: {original_fixture} → {new_description}"
 
 ### Discovery Protocol
 
-1. **Analyze the agent's tool surface** — what combinations haven't been tested?
-2. **Identify gaps** — what user scenario is not covered?
-3. **Propose a test case** — input, execution command, expected behavior
-4. **Label clearly**: "DISCOVERED: {new_feature} — rationale: {why}"
-5. **Rate confidence**: "CONFIDENCE: high/medium/low"
+1. **Analyze the agent's tool surface** — what stream combinations haven't been tested?
+2. **Write a new `.jsonl`** capturing the scenario as a stream of messages
+3. **Write `.expect.md`** with per-turn expectations
+4. **Update INDEX.md** with the new entry
+5. **Label**: "DISCOVERED: {description} — rationale: {why}"
+6. **Rate confidence**: "CONFIDENCE: high/medium/low"
 
 ### Main Context: Discovery Review
 
-After all subagents report back, review DISCOVERED items:
+After all subagents report back, review DISCOVERED fixtures:
 
 ```
-For each DISCOVERED test:
+For each DISCOVERED fixture:
   if confidence == "high" AND valid:
-    → Add to POOL immediately
+    → Keep in .eval/fixtures/, update INDEX.md
     → Run as additional verification
   if confidence == "medium":
-    → Add to POOL as "candidate"
+    → Keep as candidate in INDEX.md (flagged)
   if confidence == "low" OR invalid:
-    → Discard, record idea for later
+    → Remove file, record idea for later
 ```
 
 ---
@@ -268,6 +288,8 @@ Each round generates these files in `.eval/round-{N}/`:
 | `verification-part2.md` | Part 2 verification results, go/no-go decision |
 | `final-report.md` | Summary of changes, learnings, next round recommendations |
 
+New fixtures (MUTATE/DISCOVER) are written to `.eval/fixtures/` and updated in `INDEX.md`.
+
 ---
 
 ## tingly-pm Specifics
@@ -280,7 +302,9 @@ tingly-pm/
 ├── prompt/prompt.go     # System prompt (highest impact for behavior)
 ├── tools/tools.go       # 12 agent tools (medium impact)
 ├── board/               # Data layer (task CRUD, members, timeline, reports)
-└── .pm/                 # Runtime data
+├── .pm/                 # Runtime data
+└── .eval/
+    └── fixtures/        # Stream JSON test fixtures (*.jsonl + *.expect.md + INDEX.md)
 ```
 
 ### Impact Ranking
@@ -322,7 +346,7 @@ tingly-pm/
 
 | Constraint | Workaround |
 |------------|-----------|
-| Stateless mode can't resolve task names | Use multi-message session |
+| Stateless mode can't resolve task names | Use JSONL fixture files (stream JSON) |
 | Session persistence requires `.pm/sessions/` | Accept: cross-session context is lost |
 | Console formatter leaks to stdout in chat mode | Accept: chat mode has ANSI output |
 
