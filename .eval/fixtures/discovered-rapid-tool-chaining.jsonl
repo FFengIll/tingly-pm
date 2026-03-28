@@ -1,0 +1,11 @@
+{"content": "注册成员alice"}
+{"content": "注册成员bob"}
+{"content": "注册成员charlie"}
+{"content": "创建任务A：任务1，p0"}
+{"content": "创建任务B：任务2，p1"}
+{"content": "创建任务C：任务3，p2"}
+{"content": "把任务1分配给alice"}
+{"content": "把任务2分配给bob"}
+{"content": "把任务3分配给charlie"}
+{"content": "列出所有成员"}
+{"content": "列出所有任务"}

@@ -1,0 +1,11 @@
+{"content": "创建任务：主任务，p0"}
+{"content": "创建任务：子任务1，p1"}
+{"content": "创建任务：子任务2，p1"}
+{"content": "创建任务：子任务3，p2"}
+{"content": "子任务1依赖主任务"}
+{"content": "子任务2依赖主任务"}
+{"content": "子任务3依赖子任务1"}
+{"content": "把主任务状态改为done"}
+{"content": "把子任务1状态改为in_progress"}
+{"content": "把子任务2分配给alice"}
+{"content": "列出所有任务"}

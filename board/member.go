@@ -147,6 +147,50 @@ func UpdateMember(pmDir, name string, memberType string, labels []string) error 
 	return WriteMembers(pmDir, mf)
 }
 
+// UpsertMember creates or updates a member
+func UpsertMember(pmDir, name, memberType string, labels []string) error {
+	mf, err := ReadMembers(pmDir)
+	if err != nil {
+		return err
+	}
+
+	// Check if member exists
+	found := false
+	for i, m := range mf.Members {
+		if m.Name == name {
+			found = true
+			// Update existing member
+			if memberType != "" {
+				if memberType != "human" && memberType != "agent" {
+					return fmt.Errorf("type must be 'human' or 'agent', got: %s", memberType)
+				}
+				mf.Members[i].Type = memberType
+			}
+			if labels != nil {
+				mf.Members[i].Labels = labels
+			}
+			break
+		}
+	}
+
+	// Create new member if not found
+	if !found {
+		if memberType == "" {
+			return fmt.Errorf("member_type is required when creating new member %s", name)
+		}
+		if memberType != "human" && memberType != "agent" {
+			return fmt.Errorf("type must be 'human' or 'agent', got: %s", memberType)
+		}
+		mf.Members = append(mf.Members, Member{
+			Name:   name,
+			Type:   memberType,
+			Labels: labels,
+		})
+	}
+
+	return WriteMembers(pmDir, mf)
+}
+
 // RemoveMember removes a member from the registry
 func RemoveMember(pmDir, name string) error {
 	mf, err := ReadMembers(pmDir)

@@ -77,6 +77,12 @@ type AddCommentArgs struct {
 	By      string `json:"by" description:"Who is commenting"`
 }
 
+type UpsertMemberArgs struct {
+	Name       string `json:"name" description:"Member name" required:"true"`
+	MemberType string `json:"member_type" description:"Type: human or agent (required for new members)"`
+	Labels     string `json:"labels" description:"Comma-separated capability labels"`
+}
+
 type RegisterMemberArgs struct {
 	Name       string `json:"name" description:"Member name" required:"true"`
 	MemberType string `json:"member_type" description:"Type: human or agent" required:"true"`
@@ -87,6 +93,7 @@ type RemoveMemberArgs struct {
 	Name string `json:"name" description:"Member name to remove" required:"true"`
 }
 
+// UpdateMemberArgs kept for backwards compatibility, but now uses UpsertMember
 type UpdateMemberArgs struct {
 	Name       string `json:"name" description:"Member name to update" required:"true"`
 	MemberType string `json:"member_type" description:"New type: human or agent"`
@@ -361,7 +368,8 @@ func (p *PMTools) AddComment(ctx context.Context, args AddCommentArgs) (*tool.To
 	return tool.TextResponse(fmt.Sprintf("Comment added to %s", t.ID)), nil
 }
 
-func (p *PMTools) RegisterMember(ctx context.Context, args RegisterMemberArgs) (*tool.ToolResponse, error) {
+// UpsertMember creates a new member or updates an existing one
+func (p *PMTools) UpsertMember(ctx context.Context, args UpsertMemberArgs) (*tool.ToolResponse, error) {
 	var labels []string
 	if args.Labels != "" {
 		for _, l := range strings.Split(args.Labels, ",") {
@@ -369,8 +377,35 @@ func (p *PMTools) RegisterMember(ctx context.Context, args RegisterMemberArgs) (
 		}
 	}
 
-	if err := board.RegisterMember(p.pmDir, args.Name, args.MemberType, labels); err != nil {
+	// Check if member exists to determine event type
+	members, _ := board.ListMembers(p.pmDir, "")
+	exists := false
+	for _, m := range members {
+		if m.Name == args.Name {
+			exists = true
+			break
+		}
+	}
+
+	if err := board.UpsertMember(p.pmDir, args.Name, args.MemberType, labels); err != nil {
 		return nil, err
+	}
+
+	// Record appropriate event
+	if exists {
+		board.AppendEvent(p.pmDir, &board.TimelineEvent{
+			Event: "member_updated",
+			Name:  args.Name,
+			By:    "pm",
+		})
+		msg := fmt.Sprintf("Updated %s", args.Name)
+		if args.MemberType != "" {
+			msg += fmt.Sprintf(" (type: %s)", args.MemberType)
+		}
+		if len(labels) > 0 {
+			msg += fmt.Sprintf(" (labels: %s)", strings.Join(labels, ", "))
+		}
+		return tool.TextResponse(msg), nil
 	}
 
 	board.AppendEvent(p.pmDir, &board.TimelineEvent{
@@ -383,33 +418,34 @@ func (p *PMTools) RegisterMember(ctx context.Context, args RegisterMemberArgs) (
 	return tool.TextResponse(fmt.Sprintf("Registered %s (%s)", args.Name, args.MemberType)), nil
 }
 
-func (p *PMTools) UpdateMember(ctx context.Context, args UpdateMemberArgs) (*tool.ToolResponse, error) {
-	var labels []string
+// RegisterMember is an alias for UpsertMember for backward compatibility
+// DEPRECATED: Use UpsertMember directly
+func (p *PMTools) RegisterMember(ctx context.Context, args RegisterMemberArgs) (*tool.ToolResponse, error) {
+	// Convert RegisterMemberArgs to UpsertMemberArgs
+	labels := ""
 	if args.Labels != "" {
-		for _, l := range strings.Split(args.Labels, ",") {
-			labels = append(labels, strings.TrimSpace(l))
-		}
+		labels = args.Labels
 	}
-
-	if err := board.UpdateMember(p.pmDir, args.Name, args.MemberType, labels); err != nil {
-		return nil, err
-	}
-
-	msg := fmt.Sprintf("Updated %s", args.Name)
-	if args.MemberType != "" {
-		msg += fmt.Sprintf(" (type: %s)", args.MemberType)
-	}
-	if len(labels) > 0 {
-		msg += fmt.Sprintf(" (labels: %s)", strings.Join(labels, ", "))
-	}
-
-	board.AppendEvent(p.pmDir, &board.TimelineEvent{
-		Event: "member_updated",
-		Name:  args.Name,
-		By:    "pm",
+	return p.UpsertMember(ctx, UpsertMemberArgs{
+		Name:       args.Name,
+		MemberType: args.MemberType,
+		Labels:     labels,
 	})
+}
 
-	return tool.TextResponse(msg), nil
+// UpdateMember is an alias for UpsertMember for backward compatibility
+// DEPRECATED: Use UpsertMember directly
+func (p *PMTools) UpdateMember(ctx context.Context, args UpdateMemberArgs) (*tool.ToolResponse, error) {
+	// Convert UpdateMemberArgs to UpsertMemberArgs
+	labels := ""
+	if args.Labels != "" {
+		labels = args.Labels
+	}
+	return p.UpsertMember(ctx, UpsertMemberArgs{
+		Name:       args.Name,
+		MemberType: args.MemberType,
+		Labels:     labels,
+	})
 }
 
 func (p *PMTools) ListMembers(ctx context.Context, args ListMembersArgs) (*tool.ToolResponse, error) {

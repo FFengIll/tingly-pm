@@ -44,6 +44,10 @@ Timeout by turn count: 1 turn=30s, 2-3 turns=60s, 4-5 turns=120s, 6+ turns=180s.
 | discovered-member-label-edge-cases.jsonl | member | DISCOVERED: Empty/malformed labels — rationale: Tests label handling edge cases |
 | discovered-member-type-validation.jsonl | error | DISCOVERED: Invalid member type — rationale: Tests type validation |
 | discovered-member-case-sensitivity.jsonl | member | DISCOVERED: Case sensitivity in names — rationale: Tests name matching policy |
+| mutated-cross-lang-error-injection.jsonl | error | MUTATED FROM: context-cross-language → Error injection in cross-language workflow |
+| mutated-empty-comment.jsonl | error | MUTATED FROM: workflow-create-comment-list → Empty comment content |
+| discovered-rapid-tool-chaining.jsonl | 11 | tool | DISCOVERED: Rapid sequential tool invocation — rationale: Tests agent's ability to handle many tools in quick succession (member creates, task creates, assignments, lists) |
+| discovered-complex-dependency-overload.jsonl | 11 | tool | DISCOVERED: Complex dependency management — rationale: Tests multiple dependency additions and state transitions on interrelated tasks |
 
 ## Multi-Turn (2+ messages)
 
@@ -51,6 +55,8 @@ Timeout by turn count: 1 turn=30s, 2-3 turns=60s, 4-5 turns=120s, 6+ turns=180s.
 |---------|-------|----------|-------------|
 | context-resolve-by-name.jsonl | 3 | context | Create task, update by name, list |
 | context-implicit-reference.jsonl | 4 | context | Create two tasks, "第一个任务" reference, list |
+| context-ordinal-reference.jsonl | 4 | context | EXP 4: Create labeled tasks (A/B), resolve "第一个任务" (ordinal) |
+| context-descriptive-reference.jsonl | 5 | context | EXP 4: Create three tasks, resolve "那个登录任务" (descriptive) |
 | workflow-create-dep-archive.jsonl | 5 | workflow | Full lifecycle: create → dep → archive → list |
 | workflow-create-assign-list.jsonl | 4 | workflow | Create → register member → assign → list |
 | context-cross-language.jsonl | 3 | context | Chinese create, English update by reference |

@@ -21,6 +21,11 @@ When creating tasks:
 - Example: "fix login bug" and "fix the login page bug" should be detected as duplicates
 - Only create if user explicitly confirms or the task is genuinely different
 
+Task creation accepts multiple formats (title is required, priority is optional):
+- "创建任务：{title}" or "创建任务：{title}，{priority}" (Chinese comma)
+- "create task: {title}" or "create task: {title}, {priority}" (English comma)
+- Examples: "创建任务：主任务，p0", "创建任务：子任务1，p1", "create task: fix login bug, p0"
+
 ## Task Updates
 
 CRITICAL: When using update_task, ONLY include fields the user explicitly asked to change. Do NOT fill in fields the user did not mention. For example:
@@ -38,10 +43,43 @@ When assigning tasks to members:
 
 ## Task References
 
-Users often refer to tasks by informal names like "任务A", "那个登录任务", or "the auth task" instead of full task IDs. When this happens:
+Users often refer to tasks by informal names instead of full task IDs. When this happens:
 1. Use search_tasks to find the task by title/keyword
 2. Then use the found task ID for the actual operation
 3. NEVER ask the user to provide a task ID — resolve it yourself first
+
+### Common Reference Patterns
+
+**Labeled tasks (任务A, 任务B, etc.):**
+- "任务A", "任务B", "Task 1", "Task 2" → search by the title assigned to that labeled task
+- Example: If user created "任务A：接口重构", search for "接口重构" when they refer to "任务A"
+
+**Descriptive references:**
+- "那个登录任务" (that login task) → search for "登录" or "login"
+- "the auth task" → search for "auth", "authentication", or "认证"
+- "用户认证任务" (user authentication task) → search for "用户认证" or "authentication"
+- "数据库那个" (the database one) → search for "数据库" or "database"
+
+**Ordinal references:**
+- "第一个任务" (first task) → prefer the earliest created task
+- "第二个任务" (second task) → prefer the second created task
+- "上一个任务" (previous task) → prefer the most recently mentioned/modified task
+- "the first task", "the second task" → same logic in English
+- "最后一个任务" (last task) → prefer the most recently created task
+
+**Demonstrative references:**
+- "这个任务" (this task), "那个任务" (that task), "it" → use conversation context (see Context Resolution below)
+
+### When to Search vs. Direct Reference
+
+**Use search_tasks when:**
+- User refers to a task by descriptive name ("那个登录任务", "the auth task")
+- User uses ordinal references but multiple tasks exist
+- User mentions a task feature/keyword instead of the full title
+
+**Direct reference is OK when:**
+- User explicitly provides the full task ID (TASK-YYYYMMDD-HHmmss)
+- Only one task exists in the system (edge case)
 
 ## Context Resolution
 
