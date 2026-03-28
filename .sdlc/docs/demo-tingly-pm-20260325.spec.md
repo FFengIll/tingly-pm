@@ -21,20 +21,20 @@
 
 ## Design Decisions Summary
 
-| Dimension | Decision |
-|-----------|----------|
-| **Core Role** | Background service / AI project secretary |
-| **Interaction** | NL-first bot, three modes: chat / stdio / HTTP |
-| **Storage** | File + directory structured in `.pm/` |
-| **Task ID** | Timestamp-based `TASK-YYYYMMDD-HHmmss` |
-| **File Naming** | `{priority}-{id}-{slug}.md` — meaningful at a glance |
+| Dimension            | Decision                                                                     |
+| -------------------- | ---------------------------------------------------------------------------- |
+| **Core Role**        | Background service / AI project secretary                                    |
+| **Interaction**      | NL-first bot, three modes: chat / stdio / HTTP                               |
+| **Storage**          | File + directory structured in `.pm/`                                        |
+| **Task ID**          | Timestamp-based `TASK-YYYYMMDD-HHmmss`                                       |
+| **File Naming**      | `{priority}-{id}-{slug}.md` — meaningful at a glance                         |
 | **Status Lifecycle** | Active states stay in `tasks/`, terminal states archive to `archive/YYYYMM/` |
-| **Team Members** | Typed: `human` vs `agent` |
-| **Reporting** | PM provides tool, externally triggered |
-| **Init** | Auto-create on first use, no explicit init |
-| **Git** | `.pm/` is an independent git repo inside project dir |
-| **Config** | `-config <dir>` to read `config.json` for model settings |
-| **Model** | Anthropic Claude only |
+| **Team Members**     | Typed: `human` vs `agent`                                                    |
+| **Reporting**        | PM provides tool, externally triggered                                       |
+| **Init**             | Auto-create on first use, no explicit init                                   |
+| **Git**              | `.pm/` is an independent git repo inside project dir                         |
+| **Config**           | `-config <dir>` to read `config.json` for model settings                     |
+| **Model**            | Anthropic Claude only                                                        |
 
 ---
 
@@ -175,11 +175,11 @@ id := fmt.Sprintf("TASK-%s", time.Now().Format("20060102-150405"))
 
 Format: `{priority}-{id}-{slug}.md`
 
-| Part | Value | Example |
-|------|-------|---------|
-| **priority** | `p0` \| `p1` \| `p2` \| `p3` (lower = higher) | `p0` |
-| **id** | `TASK-YYYYMMDD-HHmmss` | `TASK-20260327-143022` |
-| **slug** | LLM-generated kebab-case English ≤50 chars | `jwt-token-refresh` |
+| Part         | Value                                         | Example                |
+| ------------ | --------------------------------------------- | ---------------------- |
+| **priority** | `p0` \| `p1` \| `p2` \| `p3` (lower = higher) | `p0`                   |
+| **id**       | `TASK-YYYYMMDD-HHmmss`                        | `TASK-20260327-143022` |
+| **slug**     | LLM-generated kebab-case English ≤50 chars    | `jwt-token-refresh`    |
 
 Example: `p0-TASK-20260327-143022-jwt-token-refresh.md`
 
@@ -211,7 +211,7 @@ blocked_by: [TASK-20260325-090000]
 
 ## Activity
 
-- [2026-03-27 14:30] Created by @yz
+- [2026-03-27 14:30] Created by @ff
 - [2026-03-27 14:35] Assigned to agent-1
 - [2026-03-27 16:00] Status: todo → in_progress by agent-1
 ```
@@ -262,18 +262,18 @@ todo ──► in_progress ──► review ──► done ──────►
 
 ### Active States (stay in `tasks/`)
 
-| Status | Meaning |
-|--------|---------|
-| `todo` | Not started |
-| `in_progress` | Being worked on |
-| `blocked` | Waiting on dependency |
-| `review` | Awaiting review/confirmation |
+| Status        | Meaning                      |
+| ------------- | ---------------------------- |
+| `todo`        | Not started                  |
+| `in_progress` | Being worked on              |
+| `blocked`     | Waiting on dependency        |
+| `review`      | Awaiting review/confirmation |
 
 ### Terminal States (moved to `archive/YYYYMM/`)
 
-| Status | Meaning |
-|--------|---------|
-| `done` | Completed |
+| Status    | Meaning   |
+| --------- | --------- |
+| `done`    | Completed |
 | `dropped` | Abandoned |
 
 When a task reaches terminal state, PM:
@@ -290,7 +290,7 @@ When a task reaches terminal state, PM:
 ```json
 {
   "members": [
-    {"name": "yz", "type": "human", "labels": ["backend", "infra"]},
+    {"name": "ff", "type": "human", "labels": ["backend", "infra"]},
     {"name": "agent-1", "type": "agent", "labels": ["coding", "golang"]}
   ]
 }
@@ -305,24 +305,24 @@ PM can distinguish behavior between humans and agents (e.g., agents may auto-cla
 `timeline.jsonl` — append-only event log:
 
 ```jsonl
-{"ts":"2026-03-27T14:30:22Z","event":"task_created","task":"TASK-20260327-143022","by":"yz"}
-{"ts":"2026-03-27T14:35:00Z","event":"task_assigned","task":"TASK-20260327-143022","assignee":"agent-1","by":"yz"}
+{"ts":"2026-03-27T14:30:22Z","event":"task_created","task":"TASK-20260327-143022","by":"ff"}
+{"ts":"2026-03-27T14:35:00Z","event":"task_assigned","task":"TASK-20260327-143022","assignee":"agent-1","by":"ff"}
 {"ts":"2026-03-27T16:00:00Z","event":"status_changed","task":"TASK-20260327-143022","from":"todo","to":"in_progress","by":"agent-1"}
 {"ts":"2026-03-28T10:00:00Z","event":"task_archived","task":"TASK-20260327-143022","status":"done","by":"agent-1"}
 ```
 
 ### Event Types
 
-| Event | Fields |
-|-------|--------|
-| `task_created` | task, by |
-| `task_assigned` | task, assignee, by |
-| `status_changed` | task, from, to, by |
-| `priority_changed` | task, from, to, by |
-| `comment_added` | task, by, content |
-| `task_archived` | task, status, by |
-| `member_registered` | name, type, by |
-| `report_generated` | type, path, by |
+| Event               | Fields             |
+| ------------------- | ------------------ |
+| `task_created`      | task, by           |
+| `task_assigned`     | task, assignee, by |
+| `status_changed`    | task, from, to, by |
+| `priority_changed`  | task, from, to, by |
+| `comment_added`     | task, by, content  |
+| `task_archived`     | task, status, by   |
+| `member_registered` | name, type, by     |
+| `report_generated`  | type, path, by     |
 
 ---
 
@@ -332,38 +332,38 @@ The PM agent (ReActAgent) has 14 internal tools:
 
 ### Task Management
 
-| Tool | Args | Description |
-|------|------|-------------|
-| `create_task` | title, slug, priority?, assignee?, labels?, description? | Create task |
-| `update_task` | task_id, status?, priority?, assignee?, labels?, title?, slug? | Update fields, rename file if needed |
-| `get_task` | task_id | Read task detail |
-| `list_tasks` | status?, assignee?, priority?, label? | List/filter active tasks |
-| `archive_task` | task_id, resolution (done/dropped) | Move to archive |
-| `search_tasks` | query | Full-text search |
+| Tool           | Args                                                           | Description                          |
+| -------------- | -------------------------------------------------------------- | ------------------------------------ |
+| `create_task`  | title, slug, priority?, assignee?, labels?, description?       | Create task                          |
+| `update_task`  | task_id, status?, priority?, assignee?, labels?, title?, slug? | Update fields, rename file if needed |
+| `get_task`     | task_id                                                        | Read task detail                     |
+| `list_tasks`   | status?, assignee?, priority?, label?                          | List/filter active tasks             |
+| `archive_task` | task_id, resolution (done/dropped)                             | Move to archive                      |
+| `search_tasks` | query                                                          | Full-text search                     |
 
 ### Collaboration
 
-| Tool | Args | Description |
-|------|------|-------------|
-| `add_comment` | task_id, content, by? | Append comment + timeline |
-| `register_member` | name, type, labels? | Add team member |
-| `list_members` | type? | List members |
-| `assign_task` | task_id, assignee | Update assignee |
+| Tool              | Args                  | Description               |
+| ----------------- | --------------------- | ------------------------- |
+| `add_comment`     | task_id, content, by? | Append comment + timeline |
+| `register_member` | name, type, labels?   | Add team member           |
+| `list_members`    | type?                 | List members              |
+| `assign_task`     | task_id, assignee     | Update assignee           |
 
 ### Relations
 
-| Tool | Args | Description |
-|------|------|-------------|
-| `add_dependency` | task_id, depends_on | Add blocked_by relation |
-| `remove_dependency` | task_id, depends_on | Remove relation |
-| `show_blockers` | task_id? | Show all blocked tasks or specific |
+| Tool                | Args                | Description                        |
+| ------------------- | ------------------- | ---------------------------------- |
+| `add_dependency`    | task_id, depends_on | Add blocked_by relation            |
+| `remove_dependency` | task_id, depends_on | Remove relation                    |
+| `show_blockers`     | task_id?            | Show all blocked tasks or specific |
 
 ### Reporting
 
-| Tool | Args | Description |
-|------|------|-------------|
+| Tool              | Args                       | Description            |
+| ----------------- | -------------------------- | ---------------------- |
 | `generate_report` | report_type (daily/weekly) | Generate + save report |
-| `summary` | — | Quick status stats |
+| `summary`         | —                          | Quick status stats     |
 
 ---
 
@@ -377,7 +377,7 @@ PM: ✓ Created TASK-20260327-143022: 实现JWT令牌刷新机制 [p0] → agent
 PM: Total active: 15 tasks
     todo: 4 | in_progress: 6 | blocked: 2 | review: 3
     Blocked: TASK-001 等待 TASK-003 完成
-    Active members: yz, agent-1, agent-2
+    Active members: ff, agent-1, agent-2
 
 > 出一份今天的日报
 PM: ## Daily Report - 2026-03-27
