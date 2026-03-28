@@ -203,13 +203,13 @@ func TestArchiveTask(t *testing.T) {
 func TestMembers(t *testing.T) {
 	pmDir := setupTestBoard(t)
 
-	err := RegisterMember(pmDir, "yz", "human", []string{"backend"})
+	err := RegisterMember(pmDir, "ff", "human", []string{"backend"})
 	if err != nil {
 		t.Fatalf("RegisterMember failed: %v", err)
 	}
 
 	// Duplicate
-	err = RegisterMember(pmDir, "yz", "human", nil)
+	err = RegisterMember(pmDir, "ff", "human", nil)
 	if err == nil {
 		t.Error("should reject duplicate member")
 	}
@@ -237,7 +237,7 @@ func TestTimeline(t *testing.T) {
 	AppendEvent(pmDir, &TimelineEvent{
 		Event: "task_created",
 		Task:  "TASK-001",
-		By:    "yz",
+		By:    "ff",
 	})
 
 	events, err := ReadTimeline(pmDir)
