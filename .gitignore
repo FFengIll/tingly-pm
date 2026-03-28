@@ -2,6 +2,10 @@
 
 .pm/config.json
 
+# Jetbrains
+
+.idea
+
 # Git ignore file
 
 # Added by Tingly Git extension - 2026-03-28
