@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -334,6 +335,8 @@ func (p *PMTools) ListMembers(ctx context.Context, args ListMembersArgs) (*tool.
 	return tool.TextResponse(b.String()), nil
 }
 
+// Note: assign_task removed in Round 2 — update_task with assignee field covers this.
+/*
 func (p *PMTools) AssignTask(ctx context.Context, args AssignTaskArgs) (*tool.ToolResponse, error) {
 	_, err := board.UpdateTask(p.pmDir, args.TaskID, map[string]any{
 		"assignee": args.Assignee,
@@ -351,6 +354,7 @@ func (p *PMTools) AssignTask(ctx context.Context, args AssignTaskArgs) (*tool.To
 
 	return tool.TextResponse(fmt.Sprintf("Assigned %s to %s", args.TaskID, args.Assignee)), nil
 }
+*/
 
 func (p *PMTools) AddDependency(ctx context.Context, args AddDependencyArgs) (*tool.ToolResponse, error) {
 	t, err := board.GetTask(p.pmDir, args.TaskID)
@@ -406,19 +410,27 @@ func (p *PMTools) ShowBlockers(ctx context.Context, args ShowBlockersArgs) (*too
 		return tool.TextResponse(fmt.Sprintf("%s is blocked by: %s", t.ID, strings.Join(t.BlockedBy, ", "))), nil
 	}
 
-	tasks, err := board.ListTasks(p.pmDir, "blocked", "", "", "")
+	// Show all tasks that have blocked_by relations (regardless of status)
+	tasks, err := board.ListTasks(p.pmDir, "", "", "", "")
 	if err != nil {
 		return nil, err
 	}
 
-	if len(tasks) == 0 {
-		return tool.TextResponse("No blocked tasks."), nil
+	var blocked []*board.Task
+	for _, t := range tasks {
+		if len(t.BlockedBy) > 0 {
+			blocked = append(blocked, t)
+		}
+	}
+
+	if len(blocked) == 0 {
+		return tool.TextResponse("No tasks with blockers."), nil
 	}
 
 	var b strings.Builder
-	b.WriteString("Blocked tasks:\n")
-	for _, t := range tasks {
-		b.WriteString(fmt.Sprintf("  %s: %s (blocked by %s)\n", t.ID, t.Title, strings.Join(t.BlockedBy, ", ")))
+	b.WriteString("Tasks with blockers:\n")
+	for _, t := range blocked {
+		b.WriteString(fmt.Sprintf("  %s: %s (%s) blocked by %s\n", t.ID, t.Title, t.Status, strings.Join(t.BlockedBy, ", ")))
 	}
 	return tool.TextResponse(b.String()), nil
 }
@@ -445,12 +457,14 @@ func (p *PMTools) Summary(ctx context.Context, args SummaryArgs) (*tool.ToolResp
 }
 
 func (p *PMTools) SearchTasks(ctx context.Context, args SearchTasksArgs) (*tool.ToolResponse, error) {
+	query := strings.ToLower(args.Query)
+
+	// Search active tasks
 	tasks, err := board.ListTasks(p.pmDir, "", "", "", "")
 	if err != nil {
 		return nil, err
 	}
 
-	query := strings.ToLower(args.Query)
 	var matches []*board.Task
 	for _, t := range tasks {
 		if strings.Contains(strings.ToLower(t.Title), query) ||
@@ -460,14 +474,45 @@ func (p *PMTools) SearchTasks(ctx context.Context, args SearchTasksArgs) (*tool.
 		}
 	}
 
+	// Also search archived tasks
+	archiveDir := filepath.Join(p.pmDir, "archive")
+	entries, _ := os.ReadDir(archiveDir)
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		monthEntries, err := os.ReadDir(filepath.Join(archiveDir, e.Name()))
+		if err != nil {
+			continue
+		}
+		for _, me := range monthEntries {
+			if me.IsDir() || !strings.HasSuffix(me.Name(), ".md") {
+				continue
+			}
+			t, err := board.ReadTaskFile(filepath.Join(archiveDir, e.Name(), me.Name()))
+			if err != nil {
+				continue
+			}
+			if strings.Contains(strings.ToLower(t.Title), query) ||
+				strings.Contains(strings.ToLower(t.Body), query) ||
+				strings.Contains(strings.ToLower(t.ID), query) {
+				matches = append(matches, t)
+			}
+		}
+	}
+
 	if len(matches) == 0 {
 		return tool.TextResponse(fmt.Sprintf("No tasks matching '%s'", args.Query)), nil
 	}
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Found %d tasks matching '%s':\n", len(matches), args.Query))
+	b.WriteString(fmt.Sprintf("Found %d task(s) matching '%s':\n", len(matches), args.Query))
 	for _, t := range matches {
-		b.WriteString(fmt.Sprintf("  [%s] %s: %s (%s)\n", t.Priority, t.ID, t.Title, t.Status))
+		assignee := ""
+		if t.Assignee != "" {
+			assignee = " → " + t.Assignee
+		}
+		b.WriteString(fmt.Sprintf("  [%s] %s: %s (%s)%s\n", t.Priority, t.ID, t.Title, t.Status, assignee))
 	}
 	return tool.TextResponse(b.String()), nil
 }

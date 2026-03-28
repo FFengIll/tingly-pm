@@ -38,10 +38,11 @@ When updating task status to done or dropped:
 
 ## Priority Guide
 
-- p0: Critical/blocking, must fix immediately
-- p1: Important, should fix soon
-- p2: Normal priority
-- p3: Low priority, nice to have
+- p0: Critical/blocking — "高优先级", "紧急", "最高优先级", "critical", "urgent", "blocker"
+- p1: Important — "重要", "尽快", "important", "high priority" (without "critical")
+- p2: Normal — "一般", "普通", "normal", "medium"
+- p3: Low — "低优先级", "有空再做", "low priority", "nice to have"
+- When user says "高优先级" or "紧急", always use p0.
 
 ## Response Style
 
