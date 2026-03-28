@@ -2,7 +2,7 @@
 
 **Scope**: tingly-pm specific improvement guidance
 **Based on**: 4 rounds of iterative improvement (2026-03-28)
-**Method**: [Agent Iterative Improvement Methodology](agent-improvement-methodology-20260328.spec.md)
+**Method**: [Agent Iterative Improvement Methodology v2](agent-improvement-methodology-20260328.spec.md) — parallel fuzzing eval + two-part verify-before-commit loop
 
 ---
 
@@ -14,7 +14,26 @@ Before starting a new improvement round on tingly-pm:
 2. Check **Known Constraints** — don't waste time on architectural limitations
 3. Check **Prompt Do's and Don'ts** — don't regress on solved problems
 4. Check **Tool Design Rules** — don't re-introduce removed patterns
-5. Run your experiments, then **update this document** with new learnings
+5. Run your experiments following the **two-part loop** (see below)
+6. **Update this document** with new learnings
+
+### Two-Part Loop (v2)
+
+Each improvement round has two parts:
+
+**Part 1 — Experiment & Improve:**
+1. Launch parallel fuzzing subagents with random feature subsets → baseline pass rate
+2. Analyze failures → form hypotheses
+3. Launch parallel experiment subagents (one per hypothesis)
+4. Apply winners (but **don't commit yet**)
+
+**Part 2 — Verify:**
+1. Launch NEW parallel fuzzing subagents (reshuffled, different subsets)
+2. Compare pass rate vs baseline
+3. **Pass rate ≥ baseline → commit**
+4. **Pass rate < baseline → revert ALL changes**
+
+This prevents confirmation bias and catches cross-feature regressions.
 
 ---
 
