@@ -83,22 +83,11 @@ type UpsertMemberArgs struct {
 	Labels     string `json:"labels" description:"Comma-separated capability labels"`
 }
 
-type RegisterMemberArgs struct {
-	Name       string `json:"name" description:"Member name" required:"true"`
-	MemberType string `json:"member_type" description:"Type: human or agent" required:"true"`
-	Labels     string `json:"labels" description:"Comma-separated capability labels"`
-}
 
 type RemoveMemberArgs struct {
 	Name string `json:"name" description:"Member name to remove" required:"true"`
 }
 
-// UpdateMemberArgs kept for backwards compatibility, but now uses UpsertMember
-type UpdateMemberArgs struct {
-	Name       string `json:"name" description:"Member name to update" required:"true"`
-	MemberType string `json:"member_type" description:"New type: human or agent"`
-	Labels     string `json:"labels" description:"Comma-separated capability labels (replaces existing)"`
-}
 
 type ListMembersArgs struct {
 	MemberType string `json:"member_type" description:"Filter by type: human or agent"`
@@ -108,10 +97,6 @@ type SearchMembersArgs struct {
 	Labels string `json:"labels" description:"Comma-separated labels to search for (fuzzy match)"`
 }
 
-type AssignTaskArgs struct {
-	TaskID   string `json:"task_id" description:"Task ID" required:"true"`
-	Assignee string `json:"assignee" description:"Assignee name" required:"true"`
-}
 
 type AddDependencyArgs struct {
 	TaskID    string `json:"task_id" description:"Task that is blocked" required:"true"`
@@ -123,11 +108,6 @@ type RemoveDependencyArgs struct {
 	DependsOn string `json:"depends_on" description:"Task ID to unblock" required:"true"`
 }
 
-/*
-type ShowBlockersArgs struct {
-	TaskID string `json:"task_id" description:"Task ID, if empty shows all blocked tasks"`
-}
-*/
 
 type GenerateReportArgs struct {
 	ReportType string `json:"report_type" description:"Report type: daily or weekly"`
@@ -418,35 +398,6 @@ func (p *PMTools) UpsertMember(ctx context.Context, args UpsertMemberArgs) (*too
 	return tool.TextResponse(fmt.Sprintf("Registered %s (%s)", args.Name, args.MemberType)), nil
 }
 
-// RegisterMember is an alias for UpsertMember for backward compatibility
-// DEPRECATED: Use UpsertMember directly
-func (p *PMTools) RegisterMember(ctx context.Context, args RegisterMemberArgs) (*tool.ToolResponse, error) {
-	// Convert RegisterMemberArgs to UpsertMemberArgs
-	labels := ""
-	if args.Labels != "" {
-		labels = args.Labels
-	}
-	return p.UpsertMember(ctx, UpsertMemberArgs{
-		Name:       args.Name,
-		MemberType: args.MemberType,
-		Labels:     labels,
-	})
-}
-
-// UpdateMember is an alias for UpsertMember for backward compatibility
-// DEPRECATED: Use UpsertMember directly
-func (p *PMTools) UpdateMember(ctx context.Context, args UpdateMemberArgs) (*tool.ToolResponse, error) {
-	// Convert UpdateMemberArgs to UpsertMemberArgs
-	labels := ""
-	if args.Labels != "" {
-		labels = args.Labels
-	}
-	return p.UpsertMember(ctx, UpsertMemberArgs{
-		Name:       args.Name,
-		MemberType: args.MemberType,
-		Labels:     labels,
-	})
-}
 
 func (p *PMTools) ListMembers(ctx context.Context, args ListMembersArgs) (*tool.ToolResponse, error) {
 	members, err := board.ListMembers(p.pmDir, args.MemberType)
@@ -490,26 +441,6 @@ func (p *PMTools) SearchMembers(ctx context.Context, args SearchMembersArgs) (*t
 	return tool.TextResponse(b.String()), nil
 }
 
-// Note: assign_task removed in Round 2 — update_task with assignee field covers this.
-/*
-func (p *PMTools) AssignTask(ctx context.Context, args AssignTaskArgs) (*tool.ToolResponse, error) {
-	_, err := board.UpdateTask(p.pmDir, args.TaskID, map[string]any{
-		"assignee": args.Assignee,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	board.AppendEvent(p.pmDir, &board.TimelineEvent{
-		Event:    "task_assigned",
-		Task:     args.TaskID,
-		Assignee: args.Assignee,
-		By:       "pm",
-	})
-
-	return tool.TextResponse(fmt.Sprintf("Assigned %s to %s", args.TaskID, args.Assignee)), nil
-}
-*/
 
 func (p *PMTools) AddDependency(ctx context.Context, args AddDependencyArgs) (*tool.ToolResponse, error) {
 	t, err := board.GetTask(p.pmDir, args.TaskID)
@@ -553,44 +484,6 @@ func (p *PMTools) RemoveDependency(ctx context.Context, args RemoveDependencyArg
 	return tool.TextResponse(fmt.Sprintf("Removed dependency: %s no longer blocked by %s", args.TaskID, args.DependsOn)), nil
 }
 
-/*
-func (p *PMTools) ShowBlockers(ctx context.Context, args ShowBlockersArgs) (*tool.ToolResponse, error) {
-	if args.TaskID != "" {
-		t, err := board.GetTask(p.pmDir, args.TaskID)
-		if err != nil {
-			return nil, err
-		}
-		if len(t.BlockedBy) == 0 {
-			return tool.TextResponse(fmt.Sprintf("%s has no blockers", t.ID)), nil
-		}
-		return tool.TextResponse(fmt.Sprintf("%s is blocked by: %s", t.ID, strings.Join(t.BlockedBy, ", "))), nil
-	}
-
-	// Show all tasks that have blocked_by relations (regardless of status)
-	tasks, err := board.ListTasks(p.pmDir, "", "", "", "")
-	if err != nil {
-		return nil, err
-	}
-
-	var blocked []*board.Task
-	for _, t := range tasks {
-		if len(t.BlockedBy) > 0 {
-			blocked = append(blocked, t)
-		}
-	}
-
-	if len(blocked) == 0 {
-		return tool.TextResponse("No tasks with blockers."), nil
-	}
-
-	var b strings.Builder
-	b.WriteString("Tasks with blockers:\n")
-	for _, t := range blocked {
-		b.WriteString(fmt.Sprintf("  %s: %s (%s) blocked by %s\n", t.ID, t.Title, t.Status, strings.Join(t.BlockedBy, ", ")))
-	}
-	return tool.TextResponse(b.String()), nil
-}
-*/
 
 func (p *PMTools) GenerateReport(ctx context.Context, args GenerateReportArgs) (*tool.ToolResponse, error) {
 	reportType := args.ReportType

@@ -39,6 +39,7 @@ Timeout by turn count: 1 turn=30s, 2-3 turns=60s, 4-5 turns=120s, 6+ turns=180s.
 | mutated-empty-member-name.jsonl | error | MUTATED FROM: member-register-list → Empty member name registration |
 | mutated-member-special-chars.jsonl | member | MUTATED FROM: member-register-list → Chinese character name (张三) |
 | mutated-member-label-special-chars.jsonl | member | MUTATED FROM: member-labels-types → Special characters in labels (前端@#$％) |
+| mutated-label-overload.jsonl | 12 | member | MUTATED FROM: member-labels-types → Tests agent with excessive labels (6+ per entity) and complex filtering scenarios |
 | discovered-conflicting-member-names.jsonl | error | DISCOVERED: Duplicate member registration — rationale: Tests duplicate detection |
 | discovered-member-missing-fields.jsonl | error | DISCOVERED: Missing member name — rationale: Tests validation of required fields |
 | discovered-member-label-edge-cases.jsonl | member | DISCOVERED: Empty/malformed labels — rationale: Tests label handling edge cases |
@@ -48,6 +49,10 @@ Timeout by turn count: 1 turn=30s, 2-3 turns=60s, 4-5 turns=120s, 6+ turns=180s.
 | mutated-empty-comment.jsonl | error | MUTATED FROM: workflow-create-comment-list → Empty comment content |
 | discovered-rapid-tool-chaining.jsonl | 11 | tool | DISCOVERED: Rapid sequential tool invocation — rationale: Tests agent's ability to handle many tools in quick succession (member creates, task creates, assignments, lists) |
 | discovered-complex-dependency-overload.jsonl | 11 | tool | DISCOVERED: Complex dependency management — rationale: Tests multiple dependency additions and state transitions on interrelated tasks |
+| discovered-tool-ambiguity.jsonl | 6 | tool | DISCOVERED BY SUBAGENT 1: Multiple empty-state listing tools — rationale: Tests tool redundancy when no data exists (search, list, report, timeline, summary, members) |
+| discovered-tool-redundancy-check.jsonl | 9 | tool | DISCOVERED BY SUBAGENT 3: Tool redundancy & repeated operations — rationale: Tests whether agent avoids redundant tool calls for same operation (repeated lists, duplicate assignments) |
+| mutated-redundant-tool-usage.jsonl | 1 | tool | MUTATED BY SUBAGENT 2: Combined create+assign+update — rationale: Tests if agent uses single CreateTask vs multiple tools |
+| discovered-tool-conflict-upsert.jsonl | 5 | tool | DISCOVERED BY SUBAGENT 2: UpsertMember conflicts — rationale: Tests RegisterMember vs UpsertMember vs UpdateMember tool confusion |
 
 ## Multi-Turn (2+ messages)
 

@@ -117,6 +117,19 @@ When updating task status to done or dropped:
 - Keep task titles in the user's original language unless they explicitly ask for English.
 - When listing tasks, organize by priority (p0 first) and show key info (status, assignee).
 
+## Tool Call Efficiency
+
+CRITICAL: Avoid making identical tool calls in succession. If you just called list_tasks,
+do not call it again unless the state has changed. The agent does NOT cache results -
+each call re-executes the operation.
+
+Examples of what NOT to do:
+- ❌ list_tasks → list_tasks (identical calls)
+- ❌ search_tasks "login" → search_tasks "login" (same query)
+- ❌ get_task TASK-xxx → get_task TASK-xxx (same task)
+
+If you need to reference previous results, use what was already returned.
+
 ## Task Reassignment
 
 When reassigning a task from one member to another:

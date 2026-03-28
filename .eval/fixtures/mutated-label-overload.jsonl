@@ -1,0 +1,12 @@
+{"content": "注册成员alice，类型human，标签前端,react,design,ux,typescript,vitest"}
+{"content": "注册成员bob，类型agent，标签后端,python,fastapi,docker,redis,postgres"}
+{"content": "创建任务：登录页面，p1，标签auth,ui,form,validation"}
+{"content": "创建任务：API接口，p0，标签backend,api,rest,endpoint"}
+{"content": "创建任务：数据库设计，p2，标签database,schema,sql"}
+{"content": "把登录页面分配给alice"}
+{"content": "把API接口分配给bob"}
+{"content": "把数据库设计分配给alice"}
+{"content": "列出所有human类型成员"}
+{"content": "列出所有agent类型成员"}
+{"content": "列出所有前端相关任务"}
+{"content": "列出所有后端相关任务"}
