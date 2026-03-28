@@ -9,7 +9,7 @@
 
 ## Summary
 
-4 rounds of iterative improvement. 14 tools → 12. Prompt rewritten from scratch.
+5 rounds of iterative improvement. 14 tools → 12. Prompt rewritten from scratch twice.
 
 | Round | Focus | Experiments | Pass Rate | Approach |
 |-------|-------|-------------|-----------|----------|
@@ -17,6 +17,7 @@
 | 2 | Priority, tools, search | 6 tests | 6/6 (100%) | Sequential |
 | 3 | Contextual reasoning | 4 tests | 4/4 (100%) | Sequential |
 | 4 | Output, timeline, consolidation | 3 parallel + integration | 3/3 + 1/1 | **Parallel** |
+| 5 | Context resolution, fuzzy dupes | 2 parallel + verify | 2/2 + verified | **v2 Parallel** |
 
 ## Starting State
 
@@ -33,7 +34,7 @@ stdio mode: broken (ANSI escape codes in JSON output)
 
 ```
 tools: 12 (removed assign_task, show_blockers; added list_timeline)
-prompt: ~60 lines, 6 structured sections
+prompt: ~73 lines, 8 structured sections (added Context Resolution)
 stdio mode: clean JSON
 ```
 
@@ -137,3 +138,41 @@ Integration test (8-step multi-message session): all features combined — PASS.
 | v0 (initial) | 14 | create_task, update_task, get_task, list_tasks, archive_task, search_tasks, add_comment, register_member, list_members, **assign_task**, add_dependency, remove_dependency, **show_blockers**, generate_report, summary, save_session |
 | v1 (round 2) | 13 | removed assign_task |
 | v2 (round 4) | 12 | removed show_blockers, added **list_timeline** |
+
+---
+
+## Round 5 — v2 Parallel Fuzzing (First Loop)
+
+**Commit:** `8629fe9`
+
+**Method:** v2 two-part loop with parallel fuzzing evaluation
+
+**Part 1 — Baseline:**
+- Launched 4 parallel subagents with randomized test selection
+- Baseline: 19.5/20 passed (97.5%)
+- Identified gaps: implicit reference resolution, fuzzy duplicate detection
+
+**Part 1 — Experiments:**
+
+| Exp | Change | Build | Tests | Result |
+|-----|--------|-------|-------|--------|
+| A | Add "Context Resolution" section | PASS | PASS | PASS - Resolves "this task", "that task", "那个任务" |
+| B | Enhanced fuzzy duplicate detection | PASS | PASS | PASS - Detects "fix login bug" vs "fix the login page bug" |
+
+**Part 2 — Verification:**
+- Launched 3 fresh subagents with reshuffled tests
+- Verified new features work without regressions
+- Result: Context resolution PASS, duplicate detection PASS (conservative but functional)
+- No regressions in existing functionality
+
+**Changes:**
+- `prompt/prompt.go`: Added 8th section "Context Resolution"
+- `prompt/prompt.go`: Enhanced Task Creation with keyword-based fuzzy matching
+- Prompt: 6 sections → 8 sections (~60 lines → ~73 lines)
+
+**Learnings:**
+- v2 parallel fuzzing is faster and catches more edge cases than sequential
+- Context resolution enables natural workflows like "create task A. assign THIS to bob"
+- Fuzzy duplicate detection works for same-language similar phrasings
+- Cross-language duplicate detection remains a future enhancement
+- Two-part verification loop prevents confirmation bias
