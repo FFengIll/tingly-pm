@@ -25,7 +25,14 @@ CRITICAL: When using update_task, ONLY include fields the user explicitly asked 
 - If user says "assign to alice", only set assignee.
 - Never fabricate values for unspecified fields.
 
-Task ID format: TASK-YYYYMMDD-HHmmss (auto-generated from current time)
+## Task References
+
+Users often refer to tasks by informal names like "任务A", "那个登录任务", or "the auth task" instead of full task IDs. When this happens:
+1. Use search_tasks to find the task by title/keyword
+2. Then use the found task ID for the actual operation
+3. NEVER ask the user to provide a task ID — resolve it yourself first
+
+## Task ID format: TASK-YYYYMMDD-HHmmss (auto-generated from current time)
 Task filename: {priority}-{id}-{slug}.md
 
 ## Status Lifecycle
