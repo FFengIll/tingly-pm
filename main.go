@@ -63,8 +63,10 @@ func main() {
 
 	switch *mode {
 	case "serve":
+		ag.SetConsoleOutputEnabled(false)
 		runHTTP(ag, *addr)
 	case "run":
+		ag.SetConsoleOutputEnabled(false)
 		runStdio(ag)
 	case "chat":
 		runChat(ag)
