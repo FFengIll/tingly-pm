@@ -65,3 +65,29 @@ func ReadTimeline(pmDir string) ([]TimelineEvent, error) {
 	}
 	return events, nil
 }
+
+// ListEvents returns the most recent events from timeline.jsonl, up to limit.
+// Returns events in reverse chronological order (newest first).
+func ListEvents(pmDir string, limit int) ([]TimelineEvent, error) {
+	events, err := ReadTimeline(pmDir)
+	if err != nil {
+		return nil, err
+	}
+
+	if limit <= 0 {
+		limit = 20
+	}
+
+	// Return last `limit` events, reversed so newest is first
+	start := 0
+	if len(events) > limit {
+		start = len(events) - limit
+	}
+
+	result := make([]TimelineEvent, limit)
+	for i := 0; i < limit && start+i < len(events); i++ {
+		result[i] = events[len(events)-1-i]
+	}
+
+	return result[:min(limit, len(events))], nil
+}

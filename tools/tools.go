@@ -59,10 +59,11 @@ type GetTaskArgs struct {
 }
 
 type ListTasksArgs struct {
-	Status   string `json:"status" description:"Filter by status"`
-	Assignee string `json:"assignee" description:"Filter by assignee"`
-	Priority string `json:"priority" description:"Filter by priority"`
-	Label    string `json:"label" description:"Filter by label"`
+	Status       string `json:"status" description:"Filter by status"`
+	Assignee     string `json:"assignee" description:"Filter by assignee"`
+	Priority     string `json:"priority" description:"Filter by priority"`
+	Label        string `json:"label" description:"Filter by label"`
+	ShowBlockers bool   `json:"show_blockers" description:"If true, only return tasks that have blocked_by relations"`
 }
 
 type ArchiveTaskArgs struct {
@@ -101,9 +102,11 @@ type RemoveDependencyArgs struct {
 	DependsOn string `json:"depends_on" description:"Task ID to unblock" required:"true"`
 }
 
+/*
 type ShowBlockersArgs struct {
 	TaskID string `json:"task_id" description:"Task ID, if empty shows all blocked tasks"`
 }
+*/
 
 type GenerateReportArgs struct {
 	ReportType string `json:"report_type" description:"Report type: daily or weekly"`
@@ -117,6 +120,10 @@ type SearchTasksArgs struct {
 
 type SaveSessionArgs struct {
 	Label string `json:"label" description:"Optional label for this save (e.g., 'before-refactor')"`
+}
+
+type ListTimelineArgs struct {
+	Limit int `json:"limit" description:"Max number of events to return (default 20, newest first)"`
 }
 
 // --- Tool Methods ---
@@ -232,19 +239,67 @@ func (p *PMTools) ListTasks(ctx context.Context, args ListTasksArgs) (*tool.Tool
 		return nil, err
 	}
 
+	// Filter to only tasks with blockers if requested
+	if args.ShowBlockers {
+		var blocked []*board.Task
+		for _, t := range tasks {
+			if len(t.BlockedBy) > 0 {
+				blocked = append(blocked, t)
+			}
+		}
+		tasks = blocked
+	}
+
 	if len(tasks) == 0 {
 		return tool.TextResponse("No tasks found."), nil
 	}
 
 	var b strings.Builder
+	now := time.Now()
+	currentPriority := ""
 	for _, t := range tasks {
+		// Print group header when priority changes
+		if t.Priority != currentPriority {
+			currentPriority = t.Priority
+			if b.Len() > 0 {
+				b.WriteString("\n")
+			}
+			b.WriteString(fmt.Sprintf("=== %s ===\n", strings.ToUpper(currentPriority)))
+		}
 		assignee := ""
 		if t.Assignee != "" {
-			assignee = " → " + t.Assignee
+			assignee = " -> " + t.Assignee
 		}
-		b.WriteString(fmt.Sprintf("[%s] %s: %s (%s)%s\n", t.Priority, t.ID, t.Title, t.Status, assignee))
+		age := ageSince(t.Created, now)
+		b.WriteString(fmt.Sprintf("[%s] %s: %s (%s, %s ago)%s\n", t.Priority, t.ID, t.Title, t.Status, age, assignee))
 	}
 	return tool.TextResponse(b.String()), nil
+}
+
+// ageSince computes a human-readable age string from an RFC3339 timestamp.
+// Examples: "<1h", "3h", "2d", "1w", "4w"
+func ageSince(created string, now time.Time) string {
+	t, err := time.Parse(time.RFC3339, created)
+	if err != nil {
+		return "?"
+	}
+	dur := now.Sub(t)
+	if dur < 0 {
+		return "<1h"
+	}
+	days := int(dur.Hours() / 24)
+	hours := int(dur.Hours())
+	if hours < 1 {
+		return "<1h"
+	}
+	if hours < 24 {
+		return fmt.Sprintf("%dh", hours)
+	}
+	if days < 7 {
+		return fmt.Sprintf("%dd", days)
+	}
+	weeks := days / 7
+	return fmt.Sprintf("%dw", weeks)
 }
 
 func (p *PMTools) ArchiveTask(ctx context.Context, args ArchiveTaskArgs) (*tool.ToolResponse, error) {
@@ -398,6 +453,7 @@ func (p *PMTools) RemoveDependency(ctx context.Context, args RemoveDependencyArg
 	return tool.TextResponse(fmt.Sprintf("Removed dependency: %s no longer blocked by %s", args.TaskID, args.DependsOn)), nil
 }
 
+/*
 func (p *PMTools) ShowBlockers(ctx context.Context, args ShowBlockersArgs) (*tool.ToolResponse, error) {
 	if args.TaskID != "" {
 		t, err := board.GetTask(p.pmDir, args.TaskID)
@@ -434,6 +490,7 @@ func (p *PMTools) ShowBlockers(ctx context.Context, args ShowBlockersArgs) (*too
 	}
 	return tool.TextResponse(b.String()), nil
 }
+*/
 
 func (p *PMTools) GenerateReport(ctx context.Context, args GenerateReportArgs) (*tool.ToolResponse, error) {
 	reportType := args.ReportType
@@ -531,6 +588,40 @@ func (p *PMTools) SaveSession(ctx context.Context, args SaveSessionArgs) (*tool.
 		return nil, err
 	}
 	return tool.TextResponse(fmt.Sprintf("Session saved as '%s'", saveID)), nil
+}
+
+func (p *PMTools) ListTimeline(ctx context.Context, args ListTimelineArgs) (*tool.ToolResponse, error) {
+	events, err := board.ListEvents(p.pmDir, args.Limit)
+	if err != nil {
+		// If file doesn't exist yet, return empty
+		return tool.TextResponse("No timeline events yet."), nil
+	}
+
+	if len(events) == 0 {
+		return tool.TextResponse("No timeline events yet."), nil
+	}
+
+	var b strings.Builder
+	for _, e := range events {
+		b.WriteString(fmt.Sprintf("[%s] %s", e.Timestamp, e.Event))
+		if e.Task != "" {
+			b.WriteString(fmt.Sprintf(" task=%s", e.Task))
+		}
+		if e.By != "" {
+			b.WriteString(fmt.Sprintf(" by=%s", e.By))
+		}
+		if e.Content != "" {
+			b.WriteString(fmt.Sprintf(" %s", e.Content))
+		}
+		if e.Name != "" {
+			b.WriteString(fmt.Sprintf(" name=%s", e.Name))
+		}
+		if e.From != "" {
+			b.WriteString(fmt.Sprintf(" %s→%s", e.From, e.To))
+		}
+		b.WriteString("\n")
+	}
+	return tool.TextResponse(b.String()), nil
 }
 
 func removeStr(s []string, v string) []string {
