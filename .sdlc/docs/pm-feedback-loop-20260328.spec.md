@@ -2,291 +2,277 @@
 
 **Date:** 2026-03-28
 **Scope:** tingly-pm self-improvement via external driver (Claude Code)
-**Status:** Draft
+**Status:** Completed (3 rounds)
 
 ---
 
 ## Overview
 
-Create a workflow where Claude Code iteratively improves tingly-pm by:
+A workflow where Claude Code iteratively improves tingly-pm by treating it as the subject being improved — analogous to "model training" but at the agent level.
 
-1. **Modify** — Edit tingly-pm source code (prompt, tools, logic)
-2. **Execute** — Run tingly-pm, interact with it via stdio mode
-3. **Observe** — Check if it behaves correctly (response quality, tool usage)
-4. **Evaluate** — Judge good or bad based on observed behavior
-5. **Decide** — Commit if good, discard if bad, iterate
+```
+Modify → Build → Execute → Observe → Evaluate → Commit or Revert → Repeat
+```
 
-This is **not** a feature of tingly-pm itself. It is an external improvement process driven by Claude Code, treating tingly-pm as the subject being improved.
+This is **not** a feature of tingly-pm itself. It is an external improvement process driven by Claude Code.
+
+---
 
 ## The Loop
 
 ```
-┌──────────────────────────────────────────────┐
-│           Claude Code (the driver)           │
-│                                              │
-│  1. Read current tingly-pm code              │
-│  2. Identify what to improve                 │
-│  3. Edit prompt.go / tools.go / main.go      │
-│  4. Build & run tingly-pm                    │
-│  5. Send test input via stdio                │
-│  6. Observe output                           │
-│  7. Good? → commit                           │
-│     Bad? → revert, try different approach    │
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│              Claude Code (the driver)                 │
+│                                                       │
+│  1. Identify what to improve                          │
+│  2. Hypothesis: what change will fix it               │
+│  3. Edit prompt.go / tools.go / main.go               │
+│  4. go build . && go test ./...                       │
+│  5. Run tingly-pm with test input via stdio           │
+│  6. Observe output                                   │
+│  7. Good? → git commit                                │
+│     Bad? → git revert, try different approach         │
+│  8. Repeat                                           │
+└──────────────────────────────────────────────────────┘
          │                            ▲
          ▼                            │
    ┌───────────┐              ┌─────────────┐
    │ tingly-pm │──stdout────▶│ evaluation  │
-   │ (subject) │              │ (manual or  │
-   └───────────┘              │  automated) │
-         │                    └─────────────┘
+   │ (subject) │              │             │
+   └───────────┘              └─────────────┘
+         │
          ▼
    .pm/ (task board state change)
 ```
 
 ## Execution Interface
 
-tingly-pm already supports `-mode run` (stdio JSON):
+tingly-pm supports `-mode run` (stdio JSON). This is the primary execution interface.
 
 ```bash
-echo '{"content":"创建一个任务：修复登录bug"}' | go run main.go -mode run -dir /tmp/test-pm
-# → {"role":"assistant","content":"Created TASK-..."}
+# Single request (stateless — fresh session each time)
+echo '{"content":"创建一个任务：修复登录bug"}' | ./tingly-pm -mode run -dir /tmp/test-pm -config .pm
+
+# Multi-message session (agent retains context across messages)
+printf '{"content":"创建任务A：认证"}\n{"content":"创建任务B：登录"}\n{"content":"B依赖A"}\n' \
+  | ./tingly-pm -mode run -dir /tmp/test-pm -config .pm
 ```
 
-This is the primary execution interface. Claude Code:
-1. Spawns tingly-pm as a subprocess
-2. Sends JSON input via stdin
-3. Reads JSON output from stdout
-4. Evaluates the response
+**Key insight**: Single-request mode tests raw tool correctness. Multi-message session tests contextual reasoning (task reference resolution, multi-step workflows).
 
 ## What Gets Improved
 
-### 1. System Prompt (`prompt/prompt.go`)
+### 1. System Prompt (`prompt/prompt.go`) — highest impact
 
-The most impactful target. Prompt changes directly affect behavior.
-
-Current prompt is short (~27 lines). Can be improved to:
-- Better task slug generation (less hallucination)
-- Proactive status tracking (ask about blocked tasks)
-- Smarter report generation
-- Better Chinese/English handling
-- More concise responses
-- Correct tool argument usage
+Prompt changes directly affect all behavior. Organized into sections:
+- Task Creation (dedup, slug generation)
+- Task Updates (CRITICAL: no field hallucination)
+- Task References (resolve informal names via search)
+- Status Lifecycle
+- Priority Guide (explicit Chinese/English mappings)
+- Response Style (language matching, conciseness)
 
 ### 2. Tool Behavior (`tools/tools.go`)
 
-- Error messages clarity
-- Validation robustness
-- Output formatting
-- Edge case handling
+- Remove redundant tools (fewer tools = less confusion)
+- Fix tool logic bugs (search scope, blocker detection)
+- Improve output formatting (include assignee, status in search results)
 
 ### 3. Agent Configuration (`main.go`)
 
-- MaxIterations tuning
-- Memory size tuning
-- Model parameters
-
-## Improvement Scenarios
-
-### Scenario: Prompt Engineering
-
-```
-Goal: PM should proactively ask about blockers when listing tasks
-
-1. Edit prompt/prompt.go — add instruction about checking blockers
-2. Build: go build .
-3. Run: echo '{"content":"列出当前任务"}' | ./tingly-pm -mode run -dir /tmp/test-pm
-4. Observe: Does the agent mention blocked tasks or show_blockers?
-5. Good → commit
-6. Bad → try different wording, revert if stuck
-```
-
-### Scenario: Tool Output Improvement
-
-```
-Goal: list_tasks output should include task age for better prioritization
-
-1. Edit tools/tools.go — add age calculation to ListTasks
-2. Build + Test: go test ./board/ ./tools/...
-3. Run: echo '{"content":"有哪些任务"}' | ./tingly-pm -mode run -dir /tmp/test-pm
-4. Observe: Does output show task age?
-5. Verify: go test still passes
-6. Good → commit
-```
-
-### Scenario: Behavior Correction
-
-```
-Goal: Agent creates duplicate tasks instead of checking existing ones first
-
-1. Run: echo '{"content":"创建任务：修复登录"}' then echo '{"content":"创建任务：修复登录"}'
-2. Observe: Agent creates two identical tasks (bad)
-3. Edit prompt/prompt.go — add instruction to search existing tasks before creating
-4. Re-run same sequence
-5. Observe: Agent now checks and warns about duplicates
-6. Good → commit
-```
-
-## Test Isolation
-
-Each improvement iteration needs a clean `.pm/` directory to avoid state contamination:
-
-```bash
-# Before each test run
-rm -rf /tmp/test-pm
-mkdir -p /tmp/test-pm
-
-# Run with isolated state
-echo '{"content":"..."}' | go run . -mode run -dir /tmp/test-pm
-```
+- Disable console output for programmatic modes (run/serve)
 
 ## Evaluation Criteria
 
 | Criterion | How to Check |
 |-----------|-------------|
 | Tool correctness | Agent calls the right tool with valid args |
+| No hallucination | Doesn't fabricate field values, task IDs, member names |
 | Response quality | Output is concise, accurate, actionable |
-| Error handling | Agent handles edge cases gracefully |
-| Prompt following | Agent follows system prompt instructions |
-| Language consistency | Chinese input → Chinese response (or appropriate mix) |
-| No hallucination | Doesn't invent task IDs, member names, etc. |
+| Language consistency | Chinese input → Chinese response |
+| Error handling | Graceful error with helpful suggestion |
+| Stateful reasoning | Resolves informal task references in session context |
 
 ## Safety Protocol
 
 1. **Always build before run** — `go build .` must succeed
 2. **Always test before commit** — `go test ./...` must pass
-3. **Isolated test environment** — Use `-dir /tmp/test-pm`, never real project data
-4. **One change at a time** — Edit one thing, test, evaluate
-5. **Revert if tests fail** — If `go test` breaks, revert immediately
-6. **Commit with intent** — Each commit message explains what behavior was improved
+3. **Isolated test environment** — `-dir /tmp/test-pm-<round>`, never real project data
+4. **One logical change at a time** — Edit, test, evaluate before next change
+5. **Revert if tests fail** — `git checkout -- <file>` immediately
+6. **Commit with intent** — Each commit message explains what behavior improved
+7. **Branch per round** — `git checkout -b experiment/round-N`; merge to main only if all pass
 
-## Workflow Template
+## Test Isolation
 
-For each improvement iteration:
+Each improvement iteration uses a clean `.pm/` directory:
 
+```bash
+mkdir -p /tmp/test-pm-rN        # N = round number
+echo '{"content":"..."}' | ./tingly-pm -mode run -dir /tmp/test-pm-rN -config .pm
 ```
-1. Identify: What behavior needs improvement?
-2. Hypothesis: What change (prompt/code) will fix it?
-3. Implement: Edit the file
-4. Verify: go build . && go test ./...
-5. Execute: Run tingly-pm with test input
-6. Observe: Does the output match expectation?
-7. Decide:
-   - go test fails → revert
-   - output wrong → revert, try different approach
-   - output correct → commit with descriptive message
-8. Repeat
-```
-
-## Current State & First Targets
-
-Based on current code analysis, likely improvement areas:
-
-1. **Prompt is minimal** (27 lines) — room for much better behavior guidance
-2. **No duplicate checking** — agent can create identical tasks
-3. **list_tasks output is plain** — no age, no grouping
-4. **No proactive behavior** — agent only reacts, doesn't suggest
-5. **Error messages are raw** — tool errors not user-friendly
-6. **No task priority guidance** — prompt doesn't say when to use p0 vs p3
-
-## Dependencies
-
-- None. Uses existing tingly-pm `-mode run` interface
-- Claude Code provides the driver loop (edit, build, run, evaluate)
-- `.pm/` directory provides clean state for each test
 
 ---
 
-## Round 1 Results (2026-03-28)
+## Round 1 — Fix Fundamentals
 
-### Changes Made
+**Branch:** `experiment/round-1-improvements`
+**Commit:** `01802b9`
 
-1. **`main.go`**: Disable console output for `run`/`serve` modes via `SetConsoleOutputEnabled(false)`
-2. **`prompt/prompt.go`**: Rewrite system prompt with structured sections
+### Baseline Problems Found
 
-### Before vs After
+| # | Test | Observation | Severity |
+|---|------|-------------|----------|
+| 1 | Create task (Chinese) | Title translated to English; ANSI escape codes leaked into JSON stdout | **Critical** |
+| 2 | Duplicate creation | Created 3 identical tasks with no dedup check | **High** |
+| 3 | Update + assign | Hallucinated title ("Update user profile UI"), slug, priority when only assignee was requested | **Critical** |
+| 4 | List tasks | Plain format, acceptable | OK |
+| 5 | Summary | OK | OK |
+| 6 | Archive | OK | OK |
 
-| Test | Before | After | Result |
-|------|--------|-------|--------|
-| Create task (Chinese input) | Title translated to English, ANSI leak in JSON | Title stays Chinese, clean JSON | PASS |
-| Duplicate creation | Created 3 identical tasks | Detected existing, upgraded priority | PASS |
-| Update + assign | Hallucinated title/slug/priority fields | Only changed specified fields | PASS |
-| List tasks | Plain format | Better formatted | PASS |
+### Changes
+
+1. **`main.go`**: `ag.SetConsoleOutputEnabled(false)` for `run` and `serve` modes
+2. **`prompt/prompt.go`**: Complete rewrite with structured sections:
+   - Task Creation: "Before creating, always search existing tasks to avoid duplicates"
+   - Task Updates: "CRITICAL: ONLY include fields the user explicitly asked to change"
+   - Priority Guide: explicit p0–p3 definitions
+   - Response Style: language matching, title language preservation
+
+### Results
+
+| Test | Before | After | Verdict |
+|------|--------|-------|---------|
+| Create task (Chinese) | Title English, ANSI leak | Title Chinese, clean JSON | PASS |
+| Duplicate creation | Created 3rd duplicate | Detected existing, upgraded instead | PASS |
+| Update + assign | Hallucinated 3 fields | Only changed assignee | PASS |
+| List tasks | Plain | Better formatted | PASS |
 | Archive | OK | OK | PASS |
-| Error handling (invalid ID) | N/A | Graceful error with suggestion | PASS |
+| Error handling (invalid ID) | N/A | Graceful with suggestion | PASS |
 | Report generation | N/A | Good formatted report | PASS |
-| Language matching | Mixed | Matches input language | PASS |
+| Language matching | Mixed | Matches input | PASS |
 
-### Remaining Issues
+### Learnings
 
-1. **"高优先级" interpreted as p1 not p0** — prompt says p0=critical, model chose p1 for "high priority". Need to map "高优先级" → p0 explicitly.
-2. **`search_tasks` only searches active tasks** — doesn't check archive. Minor.
-3. **14 tools may be too many** — some could be merged (e.g., `assign_task` is a subset of `update_task`). Future investigation.
-4. **No batch operations** — can't create multiple tasks at once. Future consideration.
-
-### Commit
-
-`01802b9` — feat: improve agent behavior — fix console leak, enhance prompt
-
-### Key Learnings
-
-- **Prompt structure matters more than length** — organized sections (Task Creation, Task Updates, Status, Priority, Response Style) work better than a flat list
-- **"CRITICAL" labels in prompt work** — the hallucination problem was fixed with a single `CRITICAL:` prefixed paragraph
-- **Console leak was a silent bug** — stdio mode was broken for programmatic use, but chat mode worked fine
+- **Prompt structure > length**: Organized sections with headers beat a flat instruction list
+- **"CRITICAL" prefix works**: A single `CRITICAL:` paragraph stopped the hallucination
+- **Console leak was silent**: Chat mode worked fine, stdio mode was broken for programmatic use
 
 ---
 
-## Round 2 Results (2026-03-28)
+## Round 2 — Priority, Tool Consolidation, Search
 
-### Changes Made
+**Branch:** `experiment/round-1-improvements` (continued)
+**Commit:** `157ef7e`
 
-1. **`prompt/prompt.go`**: Added explicit Chinese→priority mappings ("高优先级"/"紧急" → p0)
-2. **`tools/tools.go`**: Removed `assign_task` tool (redundant with `update_task`)
-3. **`tools/tools.go`**: `search_tasks` now also searches archived tasks
-4. **`tools/tools.go`**: `show_blockers` scans all tasks with `blocked_by` regardless of status
+### Baseline Problems Found
 
-### Before vs After
+| # | Test | Observation | Severity |
+|---|------|-------------|----------|
+| 1 | "高优先级" input | Mapped to p1 instead of p0 | **High** |
+| 2 | assign_task tool | Redundant with update_task (just sets assignee) | Medium |
+| 3 | search_tasks | Only searched active tasks, not archive | Low |
+| 4 | show_blockers | Only listed tasks with status=blocked, missed tasks with blocked_by relations | Medium |
 
-| Test | Before | After | Result |
-|------|--------|-------|--------|
-| "紧急" priority | Mapped to p1 | Maps to p0 | PASS |
-| Assign without assign_task | N/A | Works via update_task | PASS |
+### Changes
+
+1. **`prompt/prompt.go`**: Added explicit Chinese keyword→priority mappings:
+   - p0: "高优先级", "紧急", "最高优先级"
+   - p1: "重要", "尽快"
+   - p2: "一般", "普通"
+   - p3: "低优先级", "有空再做"
+
+2. **`tools/tools.go`**: Removed `assign_task` tool (14→13 tools)
+
+3. **`tools/tools.go`**: `search_tasks` now scans both `tasks/` and `archive/` directories
+
+4. **`tools/tools.go`**: `show_blockers` scans all tasks with non-empty `blocked_by` field regardless of status
+
+### Results
+
+| Test | Before | After | Verdict |
+|------|--------|-------|---------|
+| "紧急" → p0 | p1 | p0 | PASS |
+| Assign via update_task only | N/A | Works correctly | PASS |
 | Search archived tasks | Only active | Both active + archive | PASS |
-| Show blockers (in_progress + blocked_by) | "No blocked tasks" | Correctly shows relation | PASS |
+| show_blockers (in_progress + blocked_by) | "No blocked tasks" | Shows relation correctly | PASS |
+| Status-only update | N/A | No field contamination | PASS |
+| Member operations | OK | OK | PASS |
 
-### Commit
+### Learnings
 
-`157ef7e` — feat: tune priority mapping, remove redundant tool, fix search + blockers
-
-### Key Learnings
-
-- **Tool count reduction works** — removing `assign_task` (13→12 tools) didn't hurt behavior; the prompt guidance about "only set specified fields" made the convenience wrapper unnecessary
-- **`show_blockers` was too narrow** — filtering by `status=blocked` missed tasks that had `blocked_by` relations but different status; scanning by field presence is more useful
-- **Explicit Chinese mappings beat English-only definitions** — "critical/blocking/must fix immediately" didn't help the Chinese model translate "紧急"; explicit Chinese examples solved it
+- **Explicit Chinese mappings beat English definitions**: "critical/blocking/must fix" didn't help; "紧急" → p0 did
+- **Tool reduction is safe**: Removing assign_task didn't hurt — prompt guidance made the convenience wrapper unnecessary
+- **Field-presence scan > status filter**: show_blockers by `blocked_by != []` is more useful than by `status == "blocked"`
 
 ---
 
-## Round 3 Results (2026-03-28)
+## Round 3 — Contextual Reasoning
 
-### Changes Made
+**Branch:** `experiment/round-1-improvements` (continued)
+**Commit:** `2d098ec`
 
-1. **`prompt/prompt.go`**: Added "Task References" section — instruct agent to resolve informal task names via search instead of asking for IDs
+### Baseline Problems Found
 
-### Before vs After
+| # | Test | Observation | Severity |
+|---|------|-------------|----------|
+| 1 | "B依赖A" (stateless) | Asked user for task IDs instead of resolving | **High** |
+| 2 | Multi-assign in one message | N/A | Untested |
+| 3 | Complete by informal name | N/A | Untested |
 
-| Test | Before | After | Result |
-|------|--------|-------|--------|
-| "B依赖A" (stateless) | Asked for task IDs | Still asks (expected — no session context) | N/A |
-| "登录页面依赖用户认证" (session) | N/A | Correctly resolves both + adds dependency | PASS |
-| Multi-assign in one msg | N/A | Assigns both correctly | PASS |
-| Complete by name | N/A | Resolves name → ID → archives | PASS |
+### Changes
 
-### Commit
+1. **`prompt/prompt.go`**: Added "Task References" section:
+   - "When users refer to tasks by informal names, use search_tasks to find them first"
+   - "NEVER ask the user to provide a task ID — resolve it yourself"
 
-`2d098ec` — feat: add task reference resolution instructions to prompt
+### Results
 
-### Key Learnings
+| Test | Before | After | Verdict |
+|------|--------|-------|---------|
+| "登录页面依赖用户认证" (session) | Asked for IDs | Resolved both names + added dependency | PASS |
+| Multi-assign ("认证给alice，登录页面给bob") | N/A | Assigned both correctly | PASS |
+| Complete by name ("用户认证完成了") | N/A | Resolved → archived | PASS |
+| Smart summary | N/A | Noted alice finished, bob still active | PASS |
 
-- **Session context is critical** — task reference resolution only works when the agent has conversation history. Stateless stdio mode (separate processes) can't resolve references.
-- **Multi-message sessions unlock powerful workflows** — piping multiple JSON messages into one `tingly-pm` process allows the agent to build context and handle complex multi-step operations
-- **The prompt alone can't solve statelessness** — this is an architectural property, not a prompt issue
+### Learnings
+
+- **Session context is essential for reference resolution**: Stateless mode (separate processes) fundamentally can't resolve informal names — this is architectural, not fixable by prompt
+- **Multi-message sessions unlock complex workflows**: Piping multiple JSON lines into one process lets the agent build context
+- **The prompt works as intended when context exists**: The instruction is correct; the limitation is the execution mode
+
+---
+
+## Final State
+
+### Commits on main
+
+```
+5596371 docs: record round 2-3 experiment results in feedback spec
+2d098ec feat: add task reference resolution instructions to prompt
+157ef7e feat: tune priority mapping, remove redundant tool, fix search + blockers
+01802b9 feat: improve agent behavior — fix console leak, enhance prompt
+```
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `main.go` | +2 lines: disable console output for run/serve |
+| `prompt/prompt.go` | Rewritten: 27 lines → ~60 lines, 6 structured sections |
+| `tools/tools.go` | Removed assign_task, fixed search_tasks (archive), fixed show_blockers |
+
+### Tools: 14 → 13
+
+| Removed | Reason |
+|---------|--------|
+| `assign_task` | Redundant with `update_task(assignee=...)` |
+
+### Remaining Improvement Opportunities
+
+1. **Batch operations** — create multiple tasks in one message (prompt-only, model dependent)
+2. **`summary` vs `list_tasks` overlap** — summary provides counts, list provides details; could merge
+3. **`show_blockers` vs `list_tasks(status=blocked)`** — now overlapping; could merge
+4. **Proactive behavior** — agent could suggest actions (e.g., "task X has been blocked for 3 days")
+5. **Timeline queries** — no tool to read timeline events (only append)
+6. **Multi-project support** — agent managing multiple `.pm/` directories
