@@ -68,27 +68,57 @@ func RegisterMember(pmDir, name, memberType string, labels []string) error {
 	return WriteMembers(pmDir, mf)
 }
 
-// ListMembers returns members, optionally filtered by type
-func ListMembers(pmDir, memberType string) ([]Member, error) {
+// QueryMembers returns members filtered by optional query (name/label search) and memberType.
+// - If query and memberType are both empty: returns all members.
+// - If only memberType is set: filters by type.
+// - If only query is set: case-insensitive substring search on name AND labels.
+// - If both are set: search by query within the given type.
+func QueryMembers(pmDir, query, memberType string) ([]Member, error) {
 	mf, err := ReadMembers(pmDir)
 	if err != nil {
 		return nil, err
 	}
 
-	if memberType == "" {
-		return mf.Members, nil
-	}
-
 	var result []Member
+	q := strings.ToLower(query)
+
 	for _, m := range mf.Members {
-		if m.Type == memberType {
+		// Filter by memberType if specified
+		if memberType != "" && m.Type != memberType {
+			continue
+		}
+
+		// If no query, include all (that passed type filter)
+		if q == "" {
 			result = append(result, m)
+			continue
+		}
+
+		// Search name (case-insensitive substring)
+		if strings.Contains(strings.ToLower(m.Name), q) {
+			result = append(result, m)
+			continue
+		}
+
+		// Search labels (case-insensitive substring)
+		for _, label := range m.Labels {
+			if strings.Contains(strings.ToLower(label), q) {
+				result = append(result, m)
+				break
+			}
 		}
 	}
 	return result, nil
 }
 
-// SearchMembers returns members matching any of the given labels
+// ListMembers returns members, optionally filtered by type.
+// Deprecated: use QueryMembers instead.
+func ListMembers(pmDir, memberType string) ([]Member, error) {
+	return QueryMembers(pmDir, "", memberType)
+}
+
+// SearchMembers returns members matching any of the given labels.
+// Deprecated: use QueryMembers instead.
 func SearchMembers(pmDir string, labels string) ([]Member, error) {
 	mf, err := ReadMembers(pmDir)
 	if err != nil {
