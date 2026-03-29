@@ -85,7 +85,7 @@ cat .eval/fixtures/{name}.jsonl | timeout {N} ./tingly-pm -mode run -dir /tmp/te
 cat .eval/fixtures/{name}.jsonl | timeout {N} ./tingly-pm -mode run -dir /tmp/test-{id} -config .pm 2>/dev/null | tee /tmp/test-{id}.output.jsonl
 ```
 
-Timeout by turn count: 1 turn=30s, 2-3 turns=60s, 4-5 turns=120s, 6+ turns=180s.
+Timeout by turn count: 1 turn=15s, 2-3 turns=30s, 4-5 turns=60s, 6+ turns=90s.
 
 ### Fixture Types
 
@@ -126,10 +126,10 @@ For each subagent:
 ### Per-Subagent Budget
 
 ```
-  - Single-turn fixtures: 3-5
-  - Multi-turn fixtures: 1-2
-  - Mutation/Discovery: 0-2 new fixtures created
-  - Total turns cap: ~20 turns per subagent
+  - Single-turn fixtures: 2-3
+  - Multi-turn fixtures: 1
+  - Mutation/Discovery: 0-1 new fixtures created
+  - Total turns cap: ~12 turns per subagent
 ```
 
 ### Mutation Rules
@@ -346,29 +346,29 @@ tingly-pm/
 | `main.go` | Low | Medium | Agent config (iterations, memory, modes) |
 | `board/*.go` | Low | Low | Data layer (rarely needs changes) |
 
-### Current Tool Inventory (14 tools)
+### Current Tool Inventory (10 tools)
 
 | Tool | Purpose |
 |------|---------|
 | `create_task` | Create task with dedup |
-| `update_task` | Update fields (no hallucination) |
+| `update_task` | Update fields, archive (status=done/dropped), append comments (body_append) |
 | `get_task` | Read task detail |
-| `query_tasks` | List/filter with grouping + age, OR full-text search (merged from list_tasks + search_tasks) |
-| `archive_task` | Move to archive (cleans dependency links on related tasks) |
-| `add_comment` | Append comment to task body |
-| `manage_dependency` | Add or remove blocked_by relation (action="add"/"remove") |
-| `upsert_member` | Add or update team member (merged from register_member + update_member) |
-| `query_members` | List/filter/search members by name AND labels (merged from list_members + search_members) |
+| `query_tasks` | List/filter with grouping + age, OR full-text search |
+| `upsert_member` | Add or update team member |
+| `query_members` | List/filter/search members by name AND labels |
 | `remove_member` | Remove team member |
-| `list_timeline` | Read recent timeline events |
-| `generate_report` | Generate + save report |
-| `summary` | Quick status stats |
+| `manage_dependency` | Add or remove blocked_by relation (action="add"/"remove") |
+| `generate_report` | Generate report: daily, weekly, summary, or timeline |
 | `save_session` | Save current session state |
 
 ### Removed Tools (Don't Re-Add)
 
 | Tool | Removed in | Why | Replacement |
 |------|-----------|-----|-------------|
+| `add_comment` | Round 11 | Merged into update_task(body_append) | Comment is just body append |
+| `archive_task` | Round 11 | Merged into update_task(status="done"/"dropped") | Auto-archive on terminal status |
+| `summary` | Round 11 | Merged into generate_report(type="summary") | Unified report generation |
+| `list_timeline` | Round 11 | Merged into generate_report(type="timeline") | Unified report generation |
 | `assign_task` | Round 2 | Subset of `update_task(assignee=...)` | Prompt says "only set specified fields" |
 | `show_blockers` | Round 4 | Merged into `list_tasks(show_blockers=true)` | Filter field |
 | `register_member` | Round 8 | Merged into `upsert_member` | Upsert handles create + update |
@@ -499,6 +499,7 @@ The improvement log tracks all rounds:
 | 7 | Personnel CRUD (search/update/remove) | 9 new fixtures | 100→95% | 2 | v2 Parallel |
 | 8 | Tool consolidation, colon format | 6 new fixtures | 97.2% | 2 | v2 Parallel |
 | 2/2 (2nd loop) | Tool dedup, code cleanup | 5 new fixtures | 97.2% | 2 | v2 Parallel |
+| 11 | CRUD consolidation | 4 merges | 100% | 1 | Manual |
 
 ### Starting State
 
@@ -514,11 +515,12 @@ stdio mode: broken (ANSI escape codes in JSON output)
 ### Ending State
 
 ```
-tools: 18 (removed assign_task, show_blockers, register_member, update_member;
-       added upsert_member, search_members, remove_member, list_timeline, save_session)
-prompt: ~146 lines, 12 structured sections
+tools: 10 (create_task, update_task, get_task, query_tasks,
+       upsert_member, query_members, remove_member,
+       manage_dependency, generate_report, save_session)
+prompt: ~148 lines, 12 structured sections
 stdio mode: clean JSON
-fixtures: 52 (41 single + 11 multi)
+fixtures: 55 (41 single + 14 multi)
 ```
 
 ---

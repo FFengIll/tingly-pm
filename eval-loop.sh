@@ -18,7 +18,7 @@ MODEL=""
 PROMPT_FILE=""
 DESC=""
 DRY_RUN=false
-VERBOSE=true
+VERBOSE=false
 START_ROUND=""   # empty = auto-detect next round
 PARALLEL=""      # empty = auto (parallel); "serial" = sequential subagents
 
