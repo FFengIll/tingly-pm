@@ -7,3 +7,14 @@
 {"ts":"2026-03-28T07:45:41Z","event":"task_created","task":"TASK-20260328-154541","by":"pm"}
 {"ts":"2026-03-28T07:46:31Z","event":"priority_changed","task":"TASK-20260328-154541","by":"pm","from":"p1","to":"p0"}
 {"ts":"2026-03-28T07:47:15Z","event":"task_created","task":"TASK-20260328-154715","by":"pm"}
+{"ts":"2026-03-28T11:41:20Z","event":"member_registered","by":"pm","name":"alice","type":"human"}
+{"ts":"2026-03-28T11:41:25Z","event":"member_registered","by":"pm","name":"bob","type":"human"}
+{"ts":"2026-03-28T11:41:31Z","event":"member_registered","by":"pm","name":"charlie","type":"human"}
+{"ts":"2026-03-28T11:41:38Z","event":"member_registered","by":"pm","name":"david","type":"human"}
+{"ts":"2026-03-28T12:12:58Z","event":"task_created","task":"TASK-20260328-201258","by":"pm"}
+{"ts":"2026-03-28T12:13:03Z","event":"task_created","task":"TASK-20260328-201303","by":"pm"}
+{"ts":"2026-03-28T12:13:08Z","event":"task_created","task":"TASK-20260328-201308","by":"pm"}
+{"ts":"2026-03-28T12:13:14Z","event":"task_created","task":"TASK-20260328-201314","by":"pm"}
+{"ts":"2026-03-28T12:13:51Z","event":"status_changed","task":"TASK-20260328-201258","by":"pm","from":"todo","to":"done"}
+{"ts":"2026-03-28T12:14:00Z","event":"status_changed","task":"TASK-20260328-201303","by":"pm","from":"todo","to":"in_progress"}
+{"ts":"2026-03-28T12:15:31Z","event":"task_created","task":"TASK-20260328-201531","by":"pm"}

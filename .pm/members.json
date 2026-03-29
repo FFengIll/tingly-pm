@@ -1,2 +1,36 @@
-{"members":[]}
-
+{
+  "members": [
+    {
+      "name": "alice",
+      "type": "human",
+      "labels": [
+        "frontend",
+        "react",
+        "typescript-dev"
+      ]
+    },
+    {
+      "name": "bob",
+      "type": "human"
+    },
+    {
+      "name": "charlie",
+      "type": "human",
+      "labels": [
+        "this-is-a-very-long-label-that-exceeds-fifty-characters-and-should-be-truncated",
+        "backend",
+        "python"
+      ]
+    },
+    {
+      "name": "david",
+      "type": "human",
+      "labels": [
+        "frontend",
+        "react",
+        "development",
+        "backend"
+      ]
+    }
+  ]
+}
