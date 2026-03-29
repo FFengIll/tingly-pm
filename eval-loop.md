@@ -1,9 +1,9 @@
 # Eval Loop Specification
 
-**Version:** 2.0
+**Version:** 2.1
 **Agent:** tingly-pm (AI project manager)
 **Driver:** Claude Code (via `eval-loop.sh`)
-**Date:** 2026-03-28
+**Date:** 2026-03-29
 
 ---
 
@@ -100,7 +100,7 @@ Timeout by turn count: 1 turn=30s, 2-3 turns=60s, 4-5 turns=120s, 6+ turns=180s.
 
 ### Initial Fixture Set
 
-25 fixtures total: 16 single-turn + 9 multi-turn. See `INDEX.md` for the full list. This is a starting point — subagents MUTATE and DISCOVER new fixtures each round.
+52 fixtures total: 41 single-turn + 11 multi-turn. See `INDEX.md` for the full list. This is a starting point — subagents MUTATE and DISCOVER new fixtures each round.
 
 ### Expectation Files
 
@@ -166,6 +166,34 @@ For each DISCOVERED fixture:
   if confidence == "low" OR invalid:
     → Remove file, record idea for later
 ```
+
+### Fixture Maintenance
+
+Every 3 rounds, subagents should:
+1. **Identify semantically duplicate fixtures** (same tool combo + same edge case)
+2. **Merge**: keep the more comprehensive one, remove the other
+3. **Update INDEX.md** accordingly
+4. **Report**: "Removed X duplicates, Y fixtures remain"
+
+---
+
+## Smoke Tests (Mandatory Suite)
+
+A small set of fixtures that MUST be run in EVERY round's Part 1 AND Part 2. These are never randomly selected — they are always included.
+
+### Current Smoke Test Set
+
+- `create-task-english.jsonl`      — core: task creation
+- `create-task-chinese.jsonl`      — core: Chinese input
+- `update-task-single-field.jsonl` — core: no hallucination on update
+- `create-task-duplicate.jsonl`    — core: dedup
+- `error-empty-input.jsonl`        — core: error handling
+
+### Maintenance
+
+- Subagents may PROMOTE a fixture to smoke test if it fails critically
+- Smoke tests should stay at 5-8 fixtures (fixed cost budget)
+- Remove from smoke set only if the feature is removed
 
 ---
 
@@ -270,9 +298,14 @@ This is the critical phase — fresh random selections to validate improvements 
 **Aggregate:** X/Y (Z%)
 **Baseline was:** A/B (C%)
 
-**Decision:**
-- If Z >= C → ✅ COMMIT: improvements verified, no regressions
-- If Z < C → ❌ REVERT ALL: git checkout -- . (analyze what regressed)
+**Decision criteria (ALL must pass):**
+1. **Aggregate pass rate:** Part2 >= Baseline
+2. **Smoke test coverage:** ALL smoke tests must PASS
+3. **No critical regression:** any fixture that passed in baseline and now fails = automatic FAIL (even if aggregate is higher)
+
+**Result:**
+- If all 3 pass → ✅ COMMIT: improvements verified, no regressions
+- If any fails → ❌ REVERT ALL: git checkout -- . (analyze what regressed)
 ```
 
 ---
@@ -286,7 +319,7 @@ Each round generates these files in `.eval/round-{N}/`:
 | `baseline-results.md` | Part 1 baseline pass rate, identified issues |
 | `experiments-part1.md` | Hypotheses, experiment reports, winner selection |
 | `verification-part2.md` | Part 2 verification results, go/no-go decision |
-| `final-report.md` | Summary of changes, learnings, next round recommendations |
+| `final-report.md` | Summary of changes, learnings, next round recommendations, cost & timing (total subagent calls, approximate tokens, wall-clock time) |
 
 New fixtures (MUTATE/DISCOVER) are written to `.eval/fixtures/` and updated in `INDEX.md`.
 
@@ -300,7 +333,7 @@ New fixtures (MUTATE/DISCOVER) are written to `.eval/fixtures/` and updated in `
 tingly-pm/
 ├── main.go              # Entry point, mode selection, agent creation
 ├── prompt/prompt.go     # System prompt (highest impact for behavior)
-├── tools/tools.go       # 12 agent tools (medium impact)
+├── tools/tools.go       # 18 agent tools (medium impact)
 ├── board/               # Data layer (task CRUD, members, timeline, reports)
 ├── .pm/                 # Runtime data
 └── .eval/
@@ -316,7 +349,7 @@ tingly-pm/
 | `main.go` | Low | Medium | Agent config (iterations, memory, modes) |
 | `board/*.go` | Low | Low | Data layer (rarely needs changes) |
 
-### Current Tool Inventory (12 tools)
+### Current Tool Inventory (18 tools)
 
 | Tool | Purpose |
 |------|---------|
@@ -327,13 +360,16 @@ tingly-pm/
 | `archive_task` | Move to archive |
 | `search_tasks` | Full-text search (active + archive) |
 | `add_comment` | Append comment to task body |
-| `register_member` | Add team member |
-| `list_members` | List team members |
 | `add_dependency` | Add blocked_by relation |
 | `remove_dependency` | Remove relation |
+| `upsert_member` | Add or update team member (merged from register_member + update_member) |
+| `list_members` | List team members |
+| `search_members` | Search members by name/label |
+| `remove_member` | Remove team member |
 | `list_timeline` | Read recent timeline events |
 | `generate_report` | Generate + save report |
 | `summary` | Quick status stats |
+| `save_session` | Save current session state |
 
 ### Removed Tools (Don't Re-Add)
 
@@ -341,6 +377,8 @@ tingly-pm/
 |------|-----------|-----|-------------|
 | `assign_task` | Round 2 | Subset of `update_task(assignee=...)` | Prompt says "only set specified fields" |
 | `show_blockers` | Round 4 | Merged into `list_tasks(show_blockers=true)` | Filter field |
+| `register_member` | Round 8 | Merged into `upsert_member` | Upsert handles create + update |
+| `update_member` | Round 8 | Merged into `upsert_member` | Upsert handles create + update |
 
 ### Known Constraints
 
@@ -354,7 +392,7 @@ tingly-pm/
 
 ## Prompt Engineering Patterns
 
-From 5 rounds of improvement:
+From 8 rounds of improvement:
 
 ### Do's
 
@@ -370,20 +408,38 @@ From 5 rounds of improvement:
 - **Don't add instructions that require context the model might not have**
 - **Don't duplicate tool descriptions** — they're auto-generated
 - **Don't add overly specific examples** — they cause overfitting
-- **Don't add more than ~80 lines** — beyond that, attention degrades
+- **Don't add more than ~80 lines** — beyond that, attention degrades. See **Prompt Size Management** for tiered guidance.
 
 ### Current Prompt Sections
 
 ```
 1. Task Creation     — dedup, fuzzy matching, slug generation
 2. Task Updates      — CRITICAL: no hallucination
-3. Task References   — resolve informal names via search
-4. Task ID Format    — TASK-YYYYMMDD-HHmmss
-5. Status Lifecycle  — active vs terminal states
-6. Priority Guide    — explicit Chinese/English mappings
-7. Response Style    — language matching, conciseness
-8. Context Resolution — implicit references (this/that task)
+3. Member Assignment — validation, label assignment
+4. Task References   — resolve informal names via search
+5. Context Resolution — implicit references (this/that task)
+6. Task ID Format    — TASK-YYYYMMDD-HHmmss
+7. Status Lifecycle  — active vs terminal states
+8. Priority Guide    — explicit Chinese/English mappings
+9. Response Style    — language matching, conciseness
+10. Tool Call Efficiency — batch when possible, avoid redundant calls
+11. Task Reassignment — move assignee, update references
+12. Member Labels    — role-based tags (e.g., frontend, backend)
 ```
+
+### Prompt Size Management
+
+| Tier | Lines | Guidance |
+|------|-------|----------|
+| Healthy | < 120 | Normal operation |
+| Warning | 120–150 | Review before adding; consider merging low-value sections |
+| Critical | > 150 | MUST compress before adding anything new |
+
+Compression strategies (in order of preference):
+1. **Merge related sections** (e.g., "Task Updates" + "Task Reassignment")
+2. **Remove examples** that the model has consistently followed for 3+ rounds
+3. **Move rarely-needed rules** to a "reference" block (lower attention priority)
+4. **Shorten verbose Chinese/English keyword mappings** to a table
 
 ---
 
@@ -446,13 +502,17 @@ The script reads the prompt and passes it to `claude -p`, which:
 
 The improvement log tracks all rounds:
 
-| Round | Focus | Experiments | Pass Rate | Approach |
+| Round | Focus | Experiments | Pass Rate | Subagents | Approach |
 |-------|-------|-------------|-----------|----------|
-| 1 | Fix fundamentals | 8 tests | 8/8 (100%) | Sequential |
-| 2 | Priority, tools, search | 6 tests | 6/6 (100%) | Sequential |
-| 3 | Contextual reasoning | 4 tests | 4/4 (100%) | Sequential |
-| 4 | Output, timeline, consolidation | 3 parallel + integration | 3/3 + 1/1 | Parallel |
-| 5 | Context resolution, fuzzy dupes | 2 parallel + verify | 2/2 + verified | v2 Parallel |
+| 1 | Fix fundamentals | 8 tests | 8/8 (100%) | — | Sequential |
+| 2 | Priority, tools, search | 6 tests | 6/6 (100%) | — | Sequential |
+| 3 | Contextual reasoning | 4 tests | 4/4 (100%) | — | Sequential |
+| 4 | Output, timeline, consolidation | 3 parallel + integration | 3/3 + 1/1 | 3 | Parallel |
+| 5 | Context resolution, fuzzy dupes | 2 parallel + verify | 2/2 + verified | 2 | v2 Parallel |
+| 6 | Personnel focus, member validation | 7 new fixtures | 91→98% | 2 | v2 Parallel |
+| 7 | Personnel CRUD (search/update/remove) | 9 new fixtures | 100→95% | 2 | v2 Parallel |
+| 8 | Tool consolidation, colon format | 6 new fixtures | 97.2% | 2 | v2 Parallel |
+| 2/2 (2nd loop) | Tool dedup, code cleanup | 5 new fixtures | 97.2% | 2 | v2 Parallel |
 
 ### Starting State
 
@@ -468,9 +528,11 @@ stdio mode: broken (ANSI escape codes in JSON output)
 ### Ending State
 
 ```
-tools: 12 (removed assign_task, show_blockers; added list_timeline)
-prompt: ~73 lines, 8 structured sections (added Context Resolution)
+tools: 18 (removed assign_task, show_blockers, register_member, update_member;
+       added upsert_member, search_members, remove_member, list_timeline, save_session)
+prompt: ~146 lines, 12 structured sections
 stdio mode: clean JSON
+fixtures: 52 (41 single + 11 multi)
 ```
 
 ---
