@@ -3,6 +3,8 @@
 {"content": "列出所有任务"}
 {"content": "再次列出所有任务"}
 {"content": "第三次列出所有任务"}
+{"content": "注册成员alice, human, frontend"}
+{"content": "注册成员bob, agent, planning"}
 {"content": "把测试任务1分配给alice"}
 {"content": "把测试任务1分配给alice"}
 {"content": "把测试任务2分配给bob"}

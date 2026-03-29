@@ -16,10 +16,7 @@ Timeout by turn count: 1 turn=30s, 2-3 turns=60s, 4-5 turns=120s, 6+ turns=180s.
 |---------|----------|-------------|
 | create-task-chinese.jsonl | create | Chinese input, keyword priority detection |
 | create-task-english.jsonl | create | English input, explicit priority |
-| create-task-duplicate.jsonl | create | Duplicate detection (requires prior create in session) |
 | create-task-priority-keyword.jsonl | create | Priority from Chinese keyword (紧急) |
-| create-task-assign.jsonl | create | Create with member assignment |
-| update-task-single-field.jsonl | update | Update single field (priority) |
 | update-task-nonexistent.jsonl | error | Graceful error for nonexistent task ID |
 | list-tasks-empty.jsonl | list | Empty board listing |
 | search-tasks-by-title.jsonl | search | Full-text search by title keyword |
@@ -32,9 +29,6 @@ Timeout by turn count: 1 turn=30s, 2-3 turns=60s, 4-5 turns=120s, 6+ turns=180s.
 | report-daily.jsonl | report | Daily report generation |
 | timeline-recent.jsonl | timeline | Recent activity listing |
 | summary-stats.jsonl | summary | Quick project stats |
-| mutated-assign-nonexistent-member.jsonl | error | MUTATED FROM: create-task-assign → Assign to non-existent member |
-| mutated-assign-empty-members.jsonl | error | MUTATED FROM: create-task-assign → Assign to empty member list |
-| mutated-cross-language-members.jsonl | workflow | MUTATED FROM: workflow-create-assign-list → Cross-language member names |
 | mutated-member-typos.jsonl | member | MUTATED FROM: member-register-list → Member name typo (alic instead of alice) |
 | mutated-empty-member-name.jsonl | error | MUTATED FROM: member-register-list → Empty member name registration |
 | mutated-member-special-chars.jsonl | member | MUTATED FROM: member-register-list → Chinese character name (张三) |
@@ -45,19 +39,16 @@ Timeout by turn count: 1 turn=30s, 2-3 turns=60s, 4-5 turns=120s, 6+ turns=180s.
 | discovered-member-label-edge-cases.jsonl | member | DISCOVERED: Empty/malformed labels — rationale: Tests label handling edge cases |
 | discovered-member-type-validation.jsonl | error | DISCOVERED: Invalid member type — rationale: Tests type validation |
 | discovered-member-case-sensitivity.jsonl | member | DISCOVERED: Case sensitivity in names — rationale: Tests name matching policy |
-| mutated-cross-lang-error-injection.jsonl | error | MUTATED FROM: context-cross-language → Error injection in cross-language workflow |
-| mutated-empty-comment.jsonl | error | MUTATED FROM: workflow-create-comment-list → Empty comment content |
-| discovered-rapid-tool-chaining.jsonl | 11 | tool | DISCOVERED: Rapid sequential tool invocation — rationale: Tests agent's ability to handle many tools in quick succession (member creates, task creates, assignments, lists) |
-| discovered-complex-dependency-overload.jsonl | 11 | tool | DISCOVERED: Complex dependency management — rationale: Tests multiple dependency additions and state transitions on interrelated tasks |
 | discovered-tool-ambiguity.jsonl | 6 | tool | DISCOVERED BY SUBAGENT 1: Multiple empty-state listing tools — rationale: Tests tool redundancy when no data exists (search, list, report, timeline, summary, members) |
-| discovered-tool-redundancy-check.jsonl | 9 | tool | DISCOVERED BY SUBAGENT 3: Tool redundancy & repeated operations — rationale: Tests whether agent avoids redundant tool calls for same operation (repeated lists, duplicate assignments) |
-| mutated-redundant-tool-usage.jsonl | 1 | tool | MUTATED BY SUBAGENT 2: Combined create+assign+update — rationale: Tests if agent uses single CreateTask vs multiple tools |
 | discovered-tool-conflict-upsert.jsonl | 5 | tool | DISCOVERED BY SUBAGENT 2: UpsertMember conflicts — rationale: Tests RegisterMember vs UpsertMember vs UpdateMember tool confusion |
 
 ## Multi-Turn (2+ messages)
 
 | Fixture | Turns | Category | Description |
 |---------|-------|----------|-------------|
+| create-task-duplicate.jsonl | 2 | create | Create task then attempt duplicate → dedup detection |
+| create-task-assign.jsonl | 2 | create | Register member then create+assign task |
+| update-task-single-field.jsonl | 2 | update | Create task then update single field (priority) |
 | context-resolve-by-name.jsonl | 3 | context | Create task, update by name, list |
 | context-implicit-reference.jsonl | 4 | context | Create two tasks, "第一个任务" reference, list |
 | context-ordinal-reference.jsonl | 4 | context | EXP 4: Create labeled tasks (A/B), resolve "第一个任务" (ordinal) |
@@ -69,6 +60,16 @@ Timeout by turn count: 1 turn=30s, 2-3 turns=60s, 4-5 turns=120s, 6+ turns=180s.
 | workflow-dependency-add-remove.jsonl | 5 | workflow | Create two → add dep → remove dep → list |
 | workflow-create-comment-list.jsonl | 3 | workflow | Create task → add comment → get detail |
 | workflow-register-assign-multi.jsonl | 6 | workflow | Register 2 members → create 2 tasks → assign each → list |
+| mutated-cross-language-members.jsonl | 4 | workflow | MUTATED FROM: workflow-create-assign-list → Cross-language member names |
+| mutated-cross-lang-error-injection.jsonl | 3 | error | MUTATED FROM: context-cross-language → Error injection in cross-language workflow |
+| mutated-empty-comment.jsonl | 3 | error | MUTATED FROM: workflow-create-comment-list → Empty comment content |
+| mutated-assign-nonexistent-member.jsonl | 2 | error | MUTATED FROM: create-task-assign → Create task then assign to non-existent member |
+| mutated-assign-empty-members.jsonl | 2 | error | MUTATED FROM: create-task-assign → Create task then assign to empty member list |
+| mutated-redundant-tool-usage.jsonl | 3 | tool | MUTATED BY SUBAGENT 2: Register member, create+assign+update task — rationale: Tests if agent avoids redundant tool calls |
+| mutated-dep-add-remove-rapid.jsonl | 8 | workflow | MUTATED: Register members, create tasks, add/remove deps rapidly |
+| discovered-rapid-tool-chaining.jsonl | 11 | tool | DISCOVERED: Rapid sequential tool invocation — rationale: Tests agent's ability to handle many tools in quick succession (member creates, task creates, assignments, lists) |
+| discovered-complex-dependency-overload.jsonl | 12 | tool | DISCOVERED: Complex dependency management — rationale: Tests multiple dependency additions and state transitions on interrelated tasks |
+| discovered-tool-redundancy-check.jsonl | 11 | tool | DISCOVERED BY SUBAGENT 3: Tool redundancy & repeated operations — rationale: Tests whether agent avoids redundant tool calls for same operation (repeated lists, duplicate assignments) |
 
 ## Fixture Lifecycle
 

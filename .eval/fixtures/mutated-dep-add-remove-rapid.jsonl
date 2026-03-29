@@ -1,0 +1,8 @@
+{"content": "注册成员alice, human, frontend, react"}
+{"content": "注册成员bob, agent, planning"}
+{"content": "创建任务A：前端重构，p0"}
+{"content": "创建任务B：测试，p1"}
+{"content": "前端重构依赖测试"}
+{"content": "移除前端重构对测试的依赖"}
+{"content": "再次添加前端重构对测试的依赖"}
+{"content": "列出所有任务"}
