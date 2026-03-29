@@ -212,7 +212,7 @@ for i in $(seq "$START_ROUND" "$END_ROUND"); do
 
   ROUND_START=$(date +%s)
 
-  build_prompt "$i" "$END_ROUND" | claude -p $MODEL_FLAG $VERBOSE_FLAG 2>&1 | tee "${SCRIPT_DIR}/.eval/round-${i}.log"
+  build_prompt "$i" "$END_ROUND" | env -u CLAUDECODE claude -p $MODEL_FLAG $VERBOSE_FLAG 2>&1 | tee "${SCRIPT_DIR}/.eval/round-${i}.log"
 
   ROUND_END=$(date +%s)
   ROUND_ELAPSED=$(( ROUND_END - ROUND_START ))
