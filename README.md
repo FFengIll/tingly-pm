@@ -178,6 +178,77 @@ main.go          # Entry point, modes (chat/run/serve), config loading
 
 Built on a **ReAct loop** (reason + act) with tool calling via [tingly-agentscope](https://github.com/tingly-dev/tingly-agentscope).
 
+## Eval Loop
+
+The eval loop iteratively improves the agent through fuzzing and verification. Each round runs baseline tests, forms hypotheses, experiments with changes, and verifies results before committing.
+
+### Quick Start
+
+```bash
+# Run 4 rounds (auto-detects next round number from existing artifacts)
+./eval-loop.sh
+
+# Dry run — preview prompts without executing
+./eval-loop.sh --dry-run
+```
+
+### CLI Reference
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-n, --rounds <N>` | `4` | Number of improvement rounds to run |
+| `-s, --start <N>` | auto | Starting round number (auto-detects highest existing + 1) |
+| `-j, --jobs <N>` | parallel | Subagent parallelism: `0` or `serial` for sequential execution |
+| `-m, --model` | default | Claude model to use |
+| `-p, --prompt` | built-in | Custom prompt file (replaces the default prompt) |
+| `-d, --desc` | none | Exploration seed text to guide improvement focus |
+| `--dry-run` | off | Print commands without executing |
+| `-v, --verbose` | on | Show Claude's intermediate steps |
+
+### Examples
+
+```bash
+# Continue from where you left off, 3 more rounds
+./eval-loop.sh -n 3
+
+# Explicit start round (e.g., rounds 10–12)
+./eval-loop.sh -s 10 -n 3
+
+# Serial mode — run subagents one at a time (lower API load)
+./eval-loop.sh -j serial
+./eval-loop.sh -j 0
+
+# Focus exploration on a specific area
+./eval-loop.sh -d "focus on cross-language duplicate detection"
+
+# Full control
+./eval-loop.sh -s 5 -n 3 -m opus -j serial -d "explore edge cases in task dependencies"
+```
+
+### Round Numbering
+
+Round numbers are persistent. The script scans `.eval/` for existing artifacts (log files, directories, reports) and starts at `max(existing) + 1`. This prevents overwriting previous results. Use `-s` to override.
+
+### Subagent Parallelism
+
+By default, subagents run in parallel during baseline and verification phases. When rate limits or resource constraints are a concern, use `-j serial` to run subagents sequentially.
+
+### Artifacts
+
+Each round writes to `.eval/`:
+
+```
+.eval/
+├── round-{N}.log              # Full Claude output for that round
+├── round-{N}/                 # Per-round subdirectory
+│   ├── baseline-results.md    # Part 1 baseline pass rate
+│   ├── experiments-part1.md   # Hypotheses and experiment results
+│   ├── verification-part2.md  # Part 2 go/no-go decision
+│   └── final-report.md        # Summary and learnings
+└── fixtures/                  # Test fixtures (JSONL streams)
+    └── INDEX.md               # Fixture manifest
+```
+
 ## License
 
 [MPL-2.0](LICENSE.txt)

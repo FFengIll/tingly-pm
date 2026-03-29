@@ -25,15 +25,12 @@ Modify → Build → Execute → Observe → Evaluate → Commit or Revert → R
 ### Usage
 
 ```bash
-# Run 4 rounds of improvement
-./eval-loop.sh
-
-# Run with custom rounds or model
-./eval-loop.sh -n 5 -m opus
-
-# Dry run (preview commands)
-./eval-loop.sh --dry-run
+./eval-loop.sh              # default: 4 rounds, auto-detect next round, parallel subagents
+./eval-loop.sh -n 5 -m opus # custom rounds and model
+./eval-loop.sh --dry-run    # preview without executing
 ```
+
+See README.md for full CLI reference (`-s`, `-j`, `-d`, etc).
 
 ---
 
@@ -349,22 +346,19 @@ tingly-pm/
 | `main.go` | Low | Medium | Agent config (iterations, memory, modes) |
 | `board/*.go` | Low | Low | Data layer (rarely needs changes) |
 
-### Current Tool Inventory (18 tools)
+### Current Tool Inventory (14 tools)
 
 | Tool | Purpose |
 |------|---------|
 | `create_task` | Create task with dedup |
 | `update_task` | Update fields (no hallucination) |
 | `get_task` | Read task detail |
-| `list_tasks` | List/filter with grouping + age |
-| `archive_task` | Move to archive |
-| `search_tasks` | Full-text search (active + archive) |
+| `query_tasks` | List/filter with grouping + age, OR full-text search (merged from list_tasks + search_tasks) |
+| `archive_task` | Move to archive (cleans dependency links on related tasks) |
 | `add_comment` | Append comment to task body |
-| `add_dependency` | Add blocked_by relation |
-| `remove_dependency` | Remove relation |
+| `manage_dependency` | Add or remove blocked_by relation (action="add"/"remove") |
 | `upsert_member` | Add or update team member (merged from register_member + update_member) |
-| `list_members` | List team members |
-| `search_members` | Search members by name/label |
+| `query_members` | List/filter/search members by name AND labels (merged from list_members + search_members) |
 | `remove_member` | Remove team member |
 | `list_timeline` | Read recent timeline events |
 | `generate_report` | Generate + save report |
@@ -379,6 +373,12 @@ tingly-pm/
 | `show_blockers` | Round 4 | Merged into `list_tasks(show_blockers=true)` | Filter field |
 | `register_member` | Round 8 | Merged into `upsert_member` | Upsert handles create + update |
 | `update_member` | Round 8 | Merged into `upsert_member` | Upsert handles create + update |
+| `list_tasks` | Round 9 | Merged into `query_tasks` | Unified query with optional search |
+| `search_tasks` | Round 9 | Merged into `query_tasks` | Unified query with optional search |
+| `list_members` | Round 9 | Merged into `query_members` | Unified query with name+label search |
+| `search_members` | Round 9 | Merged into `query_members` | Unified query with name+label search |
+| `add_dependency` | Round 9 | Merged into `manage_dependency(action="add")` | Action parameter |
+| `remove_dependency` | Round 9 | Merged into `manage_dependency(action="remove")` | Action parameter |
 
 ### Known Constraints
 
@@ -475,26 +475,12 @@ Universal criteria for any agent improvement:
 
 ## Running the Loop
 
-The `eval-loop.sh` script handles the outer loop:
+The `eval-loop.sh` script handles the outer loop. It passes the prompt to `claude -p`, which reads this spec and executes one complete round.
 
-```bash
-#!/usr/bin/env bash
-# Usage: ./eval-loop.sh [options]
-
-# Options:
-#   -n, --rounds <N>      Number of rounds (default: 4)
-#   -m, --model <model>   Claude model (omit for default)
-#   -p, --prompt <file>   Custom prompt file
-#       --dry-run         Print commands without executing
-#   -h, --help            Show help
-```
-
-The script reads the prompt and passes it to `claude -p`, which:
-1. Reads this spec document
-2. Executes ONE complete round
-3. Writes per-round artifacts to `.eval/`
-4. Commits or reverts based on Part 2 verification
-5. Appends results to improvement log
+Key behaviors you should be aware of:
+- **Round numbering is auto-detected** — the script scans `.eval/` for existing round artifacts and starts at the next number. Your round number in the prompt reflects this.
+- **Serial mode** — when the prompt contains `EXECUTION MODE: SERIAL`, you MUST run all subagents sequentially (one at a time), not in parallel. This applies to both Part 1 and Part 2 phases.
+- **Exploration seed** — when the prompt contains an `EXPLORATION SEED`, prioritize that focus area in your hypotheses and test selection.
 
 ---
 
