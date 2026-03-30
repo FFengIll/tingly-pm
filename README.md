@@ -180,7 +180,7 @@ Built on a **ReAct loop** (reason + act) with tool calling via [tingly-agentscop
 
 ## Eval Loop
 
-The eval loop iteratively improves the agent through fuzzing and verification. Each round runs baseline tests, forms hypotheses, experiments with changes, and verifies results before committing.
+The eval loop iteratively improves the agent through seed-guided exploration and per-experiment verification. Each round runs a baseline, forms hypotheses, and experiments one at a time — each independently evaluated before the next begins. Good changes accumulate; bad changes are discarded immediately.
 
 ### Quick Start
 
@@ -241,9 +241,8 @@ Each round writes to `.eval/`:
 .eval/
 ├── round-{N}.log              # Full Claude output for that round
 ├── round-{N}/                 # Per-round subdirectory
-│   ├── baseline-results.md    # Part 1 baseline pass rate
-│   ├── experiments-part1.md   # Hypotheses and experiment results
-│   ├── verification-part2.md  # Part 2 go/no-go decision
+│   ├── baseline.md            # Baseline pass rate and hypotheses
+│   ├── experiments.md         # All experiments with keep/discard decisions
 │   └── final-report.md        # Summary and learnings
 └── fixtures/                  # Test fixtures (JSONL streams)
     └── INDEX.md               # Fixture manifest

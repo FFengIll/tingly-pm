@@ -1,18 +1,20 @@
 # Eval Loop Specification
 
-**Version:** 2.1
+**Version:** 3.0
 **Agent:** tingly-pm (AI project manager)
 **Worker:** Claude Code (invoked per-round by the outer loop)
-**Date:** 2026-03-29
+**Date:** 2026-03-30
 
 ---
 
 ## Overview
 
-The eval loop is a **two-part parallel fuzzing evaluation system** for iterative agent improvement. It treats an agent (prompt + tools + config) as a trainable subject, analogous to model training at the agent level.
+The eval loop is an **iterative, per-experiment improvement system** for an agent (prompt + tools + config). Each experiment is independently verified before the next one begins — good changes accumulate, bad changes are discarded immediately.
+
+The outer loop provides a **seed** (exploration direction). The inner worker (you) uses that seed to guide fixture selection and hypothesis formation, then runs experiments one at a time with independent evaluation after each.
 
 ```
-Modify → Build → Execute → Observe → Evaluate → Commit or Revert → Repeat
+Seed → Baseline → Hypothesize → Experiment → Evaluate → Keep or Discard → Repeat
 ```
 
 ### Directory Convention
@@ -25,32 +27,40 @@ Modify → Build → Execute → Observe → Evaluate → Commit or Revert → R
 
 ### Role
 
-You are the **inner worker** of the eval loop. The outer loop (how many rounds, when to start, parallelism, etc.) is controlled externally via `eval-loop.sh` — you don't need to worry about it. Your job is to execute **one complete round** of the methodology described below, using the round number and total passed to you in the prompt.
+You are the **inner worker** of the eval loop. The outer loop (how many rounds, when to start, seeds, parallelism, etc.) is controlled externally via `eval-loop.sh` — you don't need to worry about it. Your job is to execute **one complete round** of the methodology below, using the round number, total, and seed passed to you in the prompt.
 
 ---
 
-## The Two-Part Loop
+## The Loop
 
-Each improvement round follows the v2 methodology:
+Each round is a **baseline + iterative experiments** cycle. The seed guides what to focus on; each experiment is independently evaluated before proceeding.
 
 ```
-PART 1: Experiment & Improve
-├── 1a. Parallel fuzzing baseline (N subagents: sample + mutate + discover)
-├── 1b. Review discoveries → grow pool
-├── 1c. Analyze failures → M hypotheses
-├── 1d. Parallel experiments (M subagents, one per hypothesis)
-├── 1e. Evaluate experiments → apply winners
-└── (NO commit yet)
+1. BASELINE
+   ├─ Run smoke tests + seed-guided fixtures
+   ├─ Record baseline pass rate
+   └─ Identify failures → form hypotheses (prioritized by severity)
 
-PART 2: Verify (Independent Evaluation)
-├── 2a. Parallel fuzzing evaluation (N subagents, NEW random+mutated subsets)
-├── 2b. Review new discoveries → grow pool
-├── 2c. Compare vs baseline
-├── 2d. PASS → commit | FAIL → revert all
-└── Record learnings → feed into next round
+2. ITERATE (one experiment at a time)
+   ├─ Pick top hypothesis
+   ├─ Make the change
+   ├─ EVALUATE (independent: new random+mutated fixtures, NOT the same ones from baseline)
+   │   ├─ PASS (no regressions, targeted fix works) → KEEP the change
+   │   └─ FAIL (regression or no improvement) → DISCARD the change (revert)
+   ├─ Re-run smoke tests (regression gate)
+   ├─ Record result
+   └─ Repeat from "Pick top hypothesis" until no more viable hypotheses
 
-→ Repeat (pool grows each round)
+3. COMMIT
+   └─ All kept changes are already accumulated — commit once
 ```
+
+Key principles:
+- **One experiment at a time** — no parallel experiments. Focus and evaluate.
+- **Independent evaluation** — each experiment is tested against a fresh fixture set, never the same ones used to form the hypothesis.
+- **Keep or discard immediately** — don't batch. If it's bad, revert before moving on.
+- **Smoke tests after every experiment** — cheap regression gate.
+- **Seed-guided** — the exploration seed from the outer loop shapes which fixtures you sample and what hypotheses you form.
 
 ---
 
@@ -183,7 +193,7 @@ Every 3 rounds, subagents should:
 
 ## Smoke Tests (Mandatory Suite)
 
-A small set of fixtures that MUST be run in EVERY round's Part 1 AND Part 2. These are never randomly selected — they are always included.
+A small set of fixtures that MUST be run in EVERY round — during baseline and after every experiment evaluation. These are never randomly selected — they are always included.
 
 ### Current Smoke Test Set
 
@@ -201,36 +211,47 @@ A small set of fixtures that MUST be run in EVERY round's Part 1 AND Part 2. The
 
 ---
 
-## Part 1: Baseline (Parallel Fuzzing)
+## Phase 1: Baseline
 
-Launch N subagents in parallel. Each:
-1. Gets its assigned test subset
-2. Runs each test in a clean environment (`/tmp/test-agent-rN`)
-3. Records pass/fail/observation for each test
-4. Returns a structured report
+Run the baseline to establish current performance and identify what to improve.
+
+### Procedure
+
+1. **Run smoke tests** — always included, never randomized
+2. **Run seed-guided fixtures** — sample from `INDEX.md` guided by the exploration seed, plus mutate/discover new fixtures
+3. **Record pass/fail for each fixture**
+4. **Identify failures** — categorize by severity, form hypotheses
+
+### Seed Guidance
+
+The exploration seed (provided in the prompt) shapes baseline fixture selection:
+- **Focus area** — prioritize fixtures related to that area
+- **Edge case direction** — mutate fixtures toward that edge case
+- **Discovery direction** — discover new fixtures exploring that domain
 
 ### Baseline Report Format
 
 ```markdown
 ## Baseline Results
 
-**Setup:** N subagents with randomized feature selection
-- Subagent 1: [category list] (X/Y PASS)
-- Subagent 2: [category list] (X/Y PASS)
-- ...
+**Seed:** [exploration seed from prompt]
+**Fixtures tested:** [count]
+- Smoke tests: X/Y PASS
+- Seed-guided: A/B PASS
 
 **Baseline Pass Rate:** X/Y (Z%)
 
-**Identified Issues:**
-1. [Issue description]
-2. [Issue description]
+**Identified Issues (by severity):**
+1. [Critical] [Issue description] → Hypothesis: [what to try]
+2. [High] [Issue description] → Hypothesis: [what to try]
+3. [Medium] [Issue description] → Hypothesis: [what to try]
 ```
 
 ---
 
-## Part 1: Experiments
+## Phase 2: Iterative Experiments
 
-From baseline failures, form improvement hypotheses.
+From baseline failures, form hypotheses and test them **one at a time**. Each experiment gets an independent evaluation before the next one begins.
 
 ### Problem Severity Scale
 
@@ -250,14 +271,13 @@ Target: [prompt.go / tools.go / main.go]
 Expected: [What the output should look like after]
 ```
 
-### Subagent Protocol
+### Subagent Autonomy
 
-Each experiment subagent receives:
-1. What file(s) to edit
-2. What change to make
-3. How to verify: `go build` + `go test`
-4. How to execute: test input via stdio
-5. Report format: structured pass/fail/observation
+The experiment subagent should:
+1. Understand the hypothesis and target file(s)
+2. Decide the specific change to make (the main context does not prescribe exact edits)
+3. Make the change, build (`go build`), and test (`go test`)
+4. Report what was changed and why
 
 ### Experiment Report Format
 
@@ -277,40 +297,41 @@ Each experiment subagent receives:
 
 ---
 
-## Part 2: Verify (Independent Evaluation)
+## Phase 3: Evaluate (Per-Experiment)
 
-This is the critical phase — fresh random selections to validate improvements are real, not overfit to Part 1's test set.
+After each experiment, run an **independent evaluation** using a fresh fixture set. This is the gate that decides keep or discard.
 
-### Verification Protocol
+### Evaluation Protocol
 
-1. **New random shuffle** — do NOT reuse Part 1's assignments
-2. **Same pool size** — same number of subagents, same test budget
-3. **Must include baseline failures** — ensure Part 1's fixes are re-tested
-4. **Must include random extras** — ensure no regressions in unrelated areas
+1. **Fresh fixtures** — do NOT reuse the fixtures that motivated this experiment. Sample a new set from `INDEX.md` (seed-guided).
+2. **Include smoke tests** — always re-run the full smoke suite as a regression gate.
+3. **Include the targeted failure** — the specific fixture(s) that failed in baseline and this experiment aimed to fix.
+4. **Include random extras** — check for regressions in unrelated areas.
 
-### Go / No-Go Decision
+### Keep / Discard Decision
 
 ```markdown
-## Part 2 Verification Results
+## Evaluation: Experiment [ID] - [Title]
 
-| Subagent | Pass Rate | New Features | Regressions |
-|----------|-----------|--------------|-------------|
-| 1 | X/Y (Z%) | [status] | [yes/no] |
-| 2 | X/Y (Z%) | [status] | [yes/no] |
-| ... | ... | ... | ... |
+**Fixtures tested:** [count]
+**Targeted fix:** PASS/FAIL (the specific failure this experiment addressed)
+**Smoke tests:** ALL PASS / FAILURES: [which ones]
+**Regressions:** none / [which fixtures regressed]
 
-**Aggregate:** X/Y (Z%)
-**Baseline was:** A/B (C%)
-
-**Decision criteria (ALL must pass):**
-1. **Aggregate pass rate:** Part2 >= Baseline
-2. **Smoke test coverage:** ALL smoke tests must PASS
-3. **No critical regression:** any fixture that passed in baseline and now fails = automatic FAIL (even if aggregate is higher)
-
-**Result:**
-- If all 3 pass → ✅ COMMIT: improvements verified, no regressions
-- If any fails → ❌ REVERT ALL: git checkout -- . (analyze what regressed)
+**Decision:**
+- If targeted fix PASS + smoke tests ALL PASS + no regressions
+  → ✅ KEEP: commit this experiment's changes
+- Otherwise
+  → ❌ DISCARD: revert this experiment's changes (git checkout -- . on changed files)
 ```
+
+### Stacking
+
+Experiments are sequential. Each experiment builds on top of the last kept state:
+```
+baseline → exp1 (KEEP) → exp2 (DISCARD, revert to exp1 state) → exp3 (KEEP) → ...
+```
+Only the cumulative kept changes are committed at the end of the round.
 
 ---
 
@@ -320,10 +341,9 @@ Each round generates these files in `.eval/round-{N}/`:
 
 | File | Content |
 |------|---------|
-| `baseline-results.md` | Part 1 baseline pass rate, identified issues |
-| `experiments-part1.md` | Hypotheses, experiment reports, winner selection |
-| `verification-part2.md` | Part 2 verification results, go/no-go decision |
-| `final-report.md` | Summary of changes, learnings, next round recommendations, cost & timing (total subagent calls, approximate tokens, wall-clock time) |
+| `baseline.md` | Phase 1 baseline pass rate, identified issues, hypotheses |
+| `experiments.md` | All experiment reports with individual keep/discard decisions |
+| `final-report.md` | Summary of kept changes, discarded experiments, learnings, next round recommendations, cost & timing |
 
 New fixtures (MUTATE/DISCOVER) are written to `.eval/fixtures/` and updated in `INDEX.md`.
 
@@ -473,12 +493,10 @@ Universal criteria for any agent improvement:
 2. **Test before commit** — existing tests must pass
 3. **Isolated environment** — never use real user data for testing
 4. **Branch per round** — use `.worktree/exp-round-{N}` for isolation, merge to main only when confident
-5. **Verify before commit** — Part 2 must pass before any commit
-6. **Revert immediately** — if Part 2 fails, revert ALL
+5. **Evaluate before keeping** — each experiment must pass independent evaluation + smoke tests before its changes are kept
+6. **Revert immediately** — if an experiment fails evaluation, revert that experiment's changes before trying the next
 7. **Commit with intent** — message explains what behavior improved
 8. **Record everything** — learnings feed into next round's hypotheses
-
----
 
 ---
 
