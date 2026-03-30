@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-# eval-assert.sh — Automated fixture assertion runner for tingly-pm
+# eval-assert.sh — Batch-run fixtures, collect results, AI judges pass/fail
 #
 # Usage:
-#   ./eval-assert.sh                           # run all fixtures
-#   ./eval-assert.sh smoke                     # smoke tests only
-#   ./eval-assert.sh create-task-english        # single fixture
-#   ./eval-assert.sh -v create-task-english     # verbose (show output)
+#   ./eval-assert.sh                        # run all fixtures, AI judge
+#   ./eval-assert.sh smoke                  # smoke tests only
+#   ./eval-assert.sh create-task-english    # single fixture
+#   ./eval-assert.sh -v create-task-english # verbose (show raw output)
+#   ./eval-assert.sh --collect-only         # run fixtures, skip AI judge
+#   ./eval-assert.sh --judge-only           # re-judge existing results
 #
-# Each fixture is run against a fresh tingly-pm instance. Output is parsed
-# for tool call patterns. Results are compared against expect.md assertions.
+# Flow:
+#   1. Batch-execute all fixtures → collect raw output per fixture
+#   2. Concatenate inputs + outputs + expect.md into one file
+#   3. Send to AI for batch pass/fail judgment
+#
 # Exit code: 0 = all pass, 1 = any fail, 2 = usage error.
 
 set -euo pipefail
@@ -17,126 +22,37 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FIXTURES_DIR="$SCRIPT_DIR/fixtures"
 BINARY="${TINGLY_PM_BIN:-./tingly-pm}"
 CONFIG_DIR="${TINGLY_PM_CONFIG:-.pm}"
+EVAL_DIR="$SCRIPT_DIR/.eval"
 VERBOSE="${VERBOSE:-0}"
+COLLECT_ONLY=false
+JUDGE_ONLY=false
 BASE_TIMEOUT=15
 
-# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-pass_count=0
-fail_count=0
-skip_count=0
-total_count=0
+# --- Argument parsing ---
 
-log_pass() { echo -e "  ${GREEN}PASS${NC}: $1"; ((pass_count++)) || true; }
-log_fail() { echo -e "  ${RED}FAIL${NC}: $1"; ((fail_count++)) || true; }
-log_skip() { echo -e "  ${YELLOW}SKIP${NC}: $1"; ((skip_count++)) || true; }
+positional=()
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -v|--verbose)        VERBOSE=1; shift ;;
+    --collect-only)      COLLECT_ONLY=true; shift ;;
+    --judge-only)        JUDGE_ONLY=true; shift ;;
+    smoke)               positional+=("smoke"); shift ;;
+    -h|--help)
+      sed -n '2,/^$/s/^# //p' "$0"
+      exit 0
+      ;;
+    -*) echo "Unknown option: $1"; exit 2 ;;
+    *) positional+=("$1"); shift ;;
+  esac
+done
 
-# Count turns in a jsonl file
-count_turns() {
-  wc -l < "$1" | tr -d ' '
-}
-
-# Compute timeout based on turn count
-get_timeout() {
-  local turns=$1
-  if [ "$turns" -le 1 ]; then echo $BASE_TIMEOUT
-  elif [ "$turns" -le 3 ]; then echo 30
-  elif [ "$turns" -le 5 ]; then echo 60
-  else echo 90
-  fi
-}
-
-# Run a single fixture and return the output file path
-run_fixture() {
-  local fixture="$1"
-  local name="$(basename "$fixture" .jsonl)"
-  local turns="$(count_turns "$fixture")"
-  local timeout="$(get_timeout "$turns")"
-  local tmpdir="$(mktemp -d)"
-
-  # Copy config for session/timeline support
-  cp -r "$CONFIG_DIR"/* "$tmpdir/" 2>/dev/null || true
-
-  local output="$tmpdir/output.jsonl"
-
-  if [ "$VERBOSE" = "1" ]; then
-    echo -e "  ${CYAN}Running $name (${turns} turns, ${timeout}s timeout)${NC}"
-  fi
-
-  cat "$fixture" | timeout "$timeout" "$BINARY" -mode run -dir "$tmpdir" 2>/dev/null > "$output" || true
-  echo "$output"
-}
-
-# --- Assertion Functions ---
-# These parse the agent's JSON output and check structural properties.
-# The output is line-delimited JSON: each line is {"role":"assistant","content":"...","tool_calls":[...]}
-
-# Check that the output has at least N response lines (one per turn)
-assert_min_responses() {
-  local output="$1"
-  local expected="$2"
-  local actual="$(grep -c '"role":"assistant"' "$output" 2>/dev/null || echo 0)"
-  if [ "$actual" -ge "$expected" ]; then
-    log_pass "response count: $actual >= $expected"
-    return 0
-  else
-    log_fail "response count: $actual < $expected"
-    return 1
-  fi
-}
-
-# Check that a tool call with a given name pattern appears in the output
-assert_tool_called() {
-  local output="$1"
-  local tool_pattern="$2"  # grep pattern, e.g. "CreateTask" or "UpsertMember"
-  local description="${3:-tool $tool_pattern called}"
-  if grep -q "\"name\":\"$tool_pattern\"" "$output" 2>/dev/null; then
-    log_pass "$description"
-    return 0
-  else
-    log_fail "$description (not found in output)"
-    if [ "$VERBOSE" = "1" ]; then
-      echo -e "    ${CYAN}Output:${NC}"
-      cat "$output" | head -5
-    fi
-    return 1
-  fi
-}
-
-# Check that output does NOT contain a tool call pattern
-assert_tool_not_called() {
-  local output="$1"
-  local tool_pattern="$2"
-  local description="${3:-tool $tool_pattern NOT called}"
-  if ! grep -q "\"name\":\"$tool_pattern\"" "$output" 2>/dev/null; then
-    log_pass "$description"
-    return 0
-  else
-    log_fail "$description (found unexpectedly)"
-    return 1
-  fi
-}
-
-# Check that output contains a text substring
-assert_output_contains() {
-  local output="$1"
-  local pattern="$2"
-  local description="${3:-output contains '$pattern'}"
-  if grep -q "$pattern" "$output" 2>/dev/null; then
-    log_pass "$description"
-    return 0
-  else
-    log_fail "$description"
-    return 1
-  fi
-}
-
-# --- Smoke Test Suite ---
+# --- Smoke test set ---
 
 SMOKE_TESTS=(
   "create-task-english"
@@ -146,330 +62,232 @@ SMOKE_TESTS=(
   "error-empty-input"
 )
 
-run_smoke() {
-  echo -e "\n${CYAN}=== Smoke Tests ===${NC}"
-  for name in "${SMOKE_TESTS[@]}"; do
-    local fixture="$FIXTURES_DIR/${name}.jsonl"
-    if [ ! -f "$fixture" ]; then
-      log_skip "$name (fixture not found)"
-      continue
-    fi
-    run_single "$fixture"
-  done
+# --- Helpers ---
+
+count_turns() {
+  grep -c '' "$1" 2>/dev/null || echo 0
 }
 
-# --- Per-fixture assertion definitions ---
+get_timeout() {
+  local turns=$1
+  if [ "$turns" -le 1 ]; then echo $BASE_TIMEOUT
+  elif [ "$turns" -le 3 ]; then echo 30
+  elif [ "$turns" -le 5 ]; then echo 60
+  else echo 90
+  fi
+}
 
-run_single() {
-  local fixture="$1"
-  local name="$(basename "$fixture" .jsonl)"
-  local turns="$(count_turns "$fixture")"
-  ((total_count++)) || true
+# --- Phase 1: Collect ---
 
-  echo -e "\n${CYAN}--- $name (${turns} turns) ---${NC}"
+collect() {
+  local target="${1:-all}"
 
-  local output
-  output="$(run_fixture "$fixture")"
+  # Resolve fixture list
+  local fixtures=()
+  if [[ "$target" == "all" ]]; then
+    for f in "$FIXTURES_DIR"/*.jsonl; do
+      [[ -f "$f" ]] && fixtures+=("$f")
+    done
+  elif [[ "$target" == "smoke" ]]; then
+    for name in "${SMOKE_TESTS[@]}"; do
+      local f="$FIXTURES_DIR/${name}.jsonl"
+      [[ -f "$f" ]] && fixtures+=("$f")
+    done
+  else
+    local f="$FIXTURES_DIR/${target}.jsonl"
+    [[ ! -f "$f" ]] && { echo -e "${RED}Fixture not found: $target${NC}"; exit 2; }
+    fixtures+=("$f")
+  fi
 
-  # Check that we got responses for all turns
-  assert_min_responses "$output" "$turns"
+  local batch_file="$EVAL_DIR/batch-results.md"
+  mkdir -p "$EVAL_DIR"
 
-  # Run fixture-specific assertions
-  case "$name" in
-    create-task-english)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_output_contains "$output" "TASK-" "output contains task ID"
-      ;;
-    create-task-chinese)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_output_contains "$output" "TASK-" "output contains task ID"
-      ;;
-    create-task-priority-keyword)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_output_contains "$output" "TASK-" "output contains task ID"
-      ;;
-    create-task-duplicate)
-      assert_tool_called "$output" "CreateTask" "CreateTask called (first time)"
-      # Second turn should NOT call CreateTask again (dedup)
-      ;;
-    create-task-assign)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called for alice"
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      ;;
-    update-task-single-field)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "UpdateTask" "UpdateTask called"
-      ;;
-    list-tasks-empty)
-      assert_tool_called "$output" "ListTasks" "ListTasks called"
-      assert_output_contains "$output" "No tasks" "empty board handled"
-      ;;
-    search-tasks-by-title)
-      assert_tool_called "$output" "SearchTasks\|ListTasks" "search/list tool called"
-      ;;
-    member-register-list)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      assert_tool_called "$output" "ListMembers" "ListMembers called"
-      ;;
-    member-labels-types)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      ;;
-    member-error-scenarios)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      ;;
-    error-empty-input)
-      assert_output_contains "$output" "" "no crash on empty input" && true  # just check no crash
-      ;;
-    language-english-input)
-      assert_tool_called "$output" "ListTasks\|SearchTasks" "task listing tool called"
-      ;;
-    report-daily)
-      assert_tool_called "$output" "GenerateReport" "GenerateReport called"
-      ;;
-    timeline-recent)
-      assert_tool_called "$output" "GenerateReport\|ListTimeline" "report/timeline tool called"
-      ;;
-    summary-stats)
-      assert_tool_called "$output" "GenerateReport\|Summary" "report/summary tool called"
-      ;;
-    report-types-session)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "SaveSession" "SaveSession called"
-      assert_tool_called "$output" "GenerateReport" "GenerateReport called"
-      ;;
-    verify-special-chars-label)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      ;;
-    verify-overflow-title)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      ;;
-    mutated-member-typos)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      ;;
-    mutated-empty-member-name)
-      # Should not crash — may or may not call tool
-      assert_min_responses "$output" 1
-      ;;
-    mutated-member-special-chars)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      ;;
-    mutated-member-label-special-chars)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      ;;
-    mutated-label-overload)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "UpdateTask" "UpdateTask called"
-      assert_tool_called "$output" "ListMembers" "ListMembers called"
-      ;;
-    mutated-member-missing-fields)
-      # Edge case: missing member name — should not crash
-      assert_min_responses "$output" 1
-      ;;
-    discovered-member-type-validation)
-      # Invalid member type — should not crash
-      assert_min_responses "$output" 1
-      ;;
-    discovered-member-case-sensitivity)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      assert_tool_called "$output" "ListMembers" "ListMembers called"
-      ;;
-    discovered-member-label-edge-cases)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      ;;
-    context-resolve-by-name)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "UpdateTask" "UpdateTask called"
-      ;;
-    context-ordinal-reference)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "UpdateTask" "UpdateTask called"
-      ;;
-    context-descriptive-reference)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "UpdateTask" "UpdateTask called"
-      ;;
-    context-cross-language)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "UpdateTask" "UpdateTask called"
-      ;;
-    context-error-recovery)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_min_responses "$output" 3
-      ;;
-    mutated-cross-lang-update)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "UpdateTask" "UpdateTask called"
-      ;;
-    mutated-cross-lang-error-injection)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_min_responses "$output" 3
-      ;;
-    mutated-cross-language-members)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "UpdateTask" "UpdateTask called"
-      ;;
-    workflow-create-dep-archive)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "AddDependency" "AddDependency called"
-      assert_tool_called "$output" "UpdateTask" "UpdateTask called"
-      ;;
-    workflow-create-assign-list)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      assert_tool_called "$output" "UpdateTask" "UpdateTask called"
-      assert_tool_called "$output" "ListTasks" "ListTasks called"
-      ;;
-    workflow-dependency-add-remove)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "AddDependency" "AddDependency called"
-      assert_tool_called "$output" "RemoveDependency" "RemoveDependency called"
-      ;;
-    workflow-create-comment-list)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "UpdateTask\|AddComment" "comment/update tool called"
-      ;;
-    workflow-register-assign-multi)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "UpdateTask" "UpdateTask called"
-      ;;
-    mutated-empty-comment)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      ;;
-    mutated-assign-nonexistent-member)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_min_responses "$output" 2
-      ;;
-    mutated-assign-empty-members)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_min_responses "$output" 2
-      ;;
-    mutated-dep-add-remove-rapid)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "AddDependency" "AddDependency called"
-      assert_tool_called "$output" "RemoveDependency" "RemoveDependency called"
-      ;;
-    mutated-redundant-tool-usage)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "UpdateTask" "UpdateTask called"
-      ;;
-    mutated-redundant-list-members)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      assert_tool_called "$output" "ListMembers" "ListMembers called"
-      ;;
-    mutated-reordered-comment-detail)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "UpdateTask\|AddComment" "comment/update tool called"
-      ;;
-    discovered-tool-ambiguity)
-      assert_tool_called "$output" "ListTasks\|SearchTasks" "task tool called"
-      assert_tool_called "$output" "GenerateReport\|ListTimeline\|Summary" "report tool called"
-      assert_tool_called "$output" "ListMembers" "ListMembers called"
-      ;;
-    discovered-tool-conflict-upsert)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      assert_tool_called "$output" "ListMembers" "ListMembers called"
-      ;;
-    discovered-tool-redundancy-check)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      assert_tool_called "$output" "ListTasks" "ListTasks called"
-      ;;
-    discovered-rapid-tool-chaining)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "UpdateTask" "UpdateTask called"
-      assert_tool_called "$output" "ListMembers" "ListMembers called"
-      assert_tool_called "$output" "ListTasks" "ListTasks called"
-      ;;
-    discovered-complex-dependency-overload)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "AddDependency" "AddDependency called"
-      assert_tool_called "$output" "UpdateTask" "UpdateTask called"
-      ;;
-    discovered-crud-consolidation)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "ListMembers" "ListMembers called"
-      ;;
-    discovered-cross-language-dedup)
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "ListTasks\|SearchTasks" "list/search tool called"
-      ;;
-    discovered-member-removal-workflow)
-      assert_tool_called "$output" "UpsertMember" "UpsertMember called"
-      assert_tool_called "$output" "CreateTask" "CreateTask called"
-      assert_tool_called "$output" "RemoveMember" "RemoveMember called"
-      assert_tool_called "$output" "ListMembers" "ListMembers called"
-      assert_tool_called "$output" "ListTasks" "ListTasks called"
-      ;;
-    *)
-      log_skip "no automated assertions for $name"
-      ;;
-  esac
+  echo -e "${CYAN}Collecting results for ${#fixtures[@]} fixture(s)...${NC}"
 
-  # Cleanup
-  rm -rf "$(dirname "$output")"
+  # Header
+  {
+    echo "# Eval Batch Results"
+    echo ""
+    echo "Date: $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "Binary: $BINARY"
+    echo "Fixtures: ${#fixtures[@]}"
+    echo ""
+    echo "---"
+    echo ""
+  } > "$batch_file"
+
+  local pass=0 fail=0 skip=0 total=${#fixtures[@]}
+
+  for fixture in "${fixtures[@]}"; do
+    local name="$(basename "$fixture" .jsonl)"
+    local turns="$(count_turns "$fixture")"
+    local timeout="$(get_timeout "$turns")"
+    local tmpdir="$(mktemp -d)"
+
+    # Copy config
+    mkdir -p "$tmpdir/.pm"
+    if [[ -d "$CONFIG_DIR" ]]; then
+      cp -r "$CONFIG_DIR"/* "$tmpdir/.pm/" 2>/dev/null || true
+    fi
+
+    local output="$tmpdir/output.jsonl"
+    local config_arg=""
+    [[ -d "$CONFIG_DIR" ]] && config_arg="-config $CONFIG_DIR"
+
+    if [[ "$VERBOSE" == "1" ]]; then
+      echo -e "  ${CYAN}Running $name (${turns} turns, ${timeout}s)${NC}"
+    fi
+
+    cat "$fixture" | timeout "$timeout" "$BINARY" -mode run -dir "$tmpdir" $config_arg 2>/dev/null > "$output" || true
+
+    # Check basic sanity: got at least some output
+    local response_count
+    response_count="$(grep -c '"role":"assistant"' "$output" 2>/dev/null || echo 0)"
+
+    {
+      echo "## Fixture: $name"
+      echo ""
+      echo "### Input ($turns turns)"
+      echo '```jsonl'
+      cat "$fixture"
+      echo '```'
+      echo ""
+      echo "### Output ($response_count responses)"
+      echo '```jsonl'
+      cat "$output"
+      echo '```'
+      echo ""
+      # Include expect.md if it exists
+      local expect="$FIXTURES_DIR/${name}.expect.md"
+      if [[ -f "$expect" ]]; then
+        echo "### Expectations"
+        echo '```markdown'
+        cat "$expect"
+        echo '```'
+        echo ""
+      fi
+      echo "---"
+      echo ""
+    } >> "$batch_file"
+
+    # Basic sanity check
+    if [[ "$response_count" -ge 1 ]]; then
+      echo -e "  ${GREEN}OK${NC}: $name ($response_count responses)"
+      ((pass++)) || true
+    else
+      echo -e "  ${RED}FAIL${NC}: $name (no responses)"
+      ((fail++)) || true
+    fi
+
+    rm -rf "$tmpdir"
+  done
+
+  echo ""
+  echo -e "  Collected: ${GREEN}$pass ok${NC}, ${RED}$fail fail${NC}, $total total"
+  echo -e "  Batch file: $batch_file"
+  echo ""
+
+  # Return fail count as exit code for phase 1
+  return "$fail"
+}
+
+# --- Phase 2: AI Judge ---
+
+judge() {
+  local batch_file="$EVAL_DIR/batch-results.md"
+  local result_file="$EVAL_DIR/batch-verdict.md"
+
+  if [[ ! -f "$batch_file" ]]; then
+    echo -e "${RED}No batch results found. Run collection first.${NC}"
+    exit 2
+  fi
+
+  echo -e "${CYAN}Sending batch to AI for judgment...${NC}"
+
+  local judge_prompt
+  judge_prompt=$(cat <<'JUDGE_EOF'
+You are an eval judge for a project management agent (tingly-pm).
+
+You will receive a batch of test fixture results. Each fixture has:
+- **Input**: the user messages sent to the agent (JSONL)
+- **Output**: the agent's raw responses (JSONL, each line is an assistant turn with tool_calls)
+- **Expectations** (if present): what the fixture intends to test
+
+For EACH fixture, determine PASS or FAIL based on these criteria:
+1. The agent responded to every turn (response count >= turn count)
+2. The agent called appropriate tools (correct tool names for the scenario)
+3. The agent did not crash or produce errors on valid input
+4. The agent's behavior matches the expectations if provided
+
+For edge-case/error fixtures (empty input, missing fields, etc.): PASS if the agent handles it gracefully (no crash, helpful error message).
+
+Output format — a markdown table followed by summary:
+
+| # | Fixture | Verdict | Reason |
+|---|---------|---------|--------|
+| 1 | create-task-english | PASS | Called CreateTask, returned task ID |
+| 2 | ... | ... | ... |
+
+## Summary
+- Total: N
+- PASS: X
+- FAIL: Y
+- Pass rate: Z%
+
+Be thorough but fair. The agent is non-deterministic — small variations in output are fine as long as the core behavior is correct.
+JUDGE_EOF
+)
+
+  # Combine: judge prompt + batch results, send to Claude
+  {
+    echo "$judge_prompt"
+    echo ""
+    echo "# Batch Results"
+    echo ""
+    cat "$batch_file"
+  } | claude -p --model sonnet 2>&1 | tee "$result_file"
+
+  echo ""
+  echo -e "  Verdict: $result_file"
+
+  # Parse result for exit code
+  if grep -qi 'FAIL' "$result_file" && ! grep -qi 'FAIL.*0' "$result_file"; then
+    return 1
+  fi
+  return 0
 }
 
 # --- Main ---
 
 main() {
-  if [ ! -x "$BINARY" ]; then
+  if [[ "$JUDGE_ONLY" == true ]]; then
+    judge
+    return $?
+  fi
+
+  collect "${positional[0]:-all}"
+
+  if [[ "$COLLECT_ONLY" == true ]]; then
+    return 0
+  fi
+
+  judge
+}
+
+# Banner
+echo -e "${CYAN}tingly-pm eval (AI-judged)${NC}"
+
+# Preflight
+if [[ "$JUDGE_ONLY" == false ]]; then
+  if [[ ! -x "$BINARY" ]]; then
     echo -e "${RED}Error: $BINARY not found or not executable${NC}"
     echo "Build first: go build -o tingly-pm ."
     exit 2
   fi
-
-  if [ ! -d "$FIXTURES_DIR" ]; then
+  if [[ ! -d "$FIXTURES_DIR" ]]; then
     echo -e "${RED}Error: fixtures directory not found: $FIXTURES_DIR${NC}"
     exit 2
   fi
+fi
 
-  echo -e "${CYAN}tingly-pm eval assertions${NC}"
-  echo -e "Binary: $BINARY"
-  echo -e "Fixtures: $FIXTURES_DIR"
-  echo -e "Config: $CONFIG_DIR"
-  echo -e "Time: $(date '+%Y-%m-%d %H:%M:%S')"
-
-  if [ $# -eq 0 ]; then
-    # Run all fixtures
-    for fixture in "$FIXTURES_DIR"/*.jsonl; do
-      run_single "$fixture"
-    done
-  elif [ "$1" = "smoke" ]; then
-    run_smoke
-  else
-    # Run specific fixture(s)
-    for arg in "$@"; do
-      local fixture="$FIXTURES_DIR/${arg}.jsonl"
-      if [ ! -f "$fixture" ]; then
-        fixture="$FIXTURES_DIR/${arg}"
-      fi
-      if [ ! -f "$fixture" ]; then
-        echo -e "${RED}Error: fixture not found: $arg${NC}"
-        exit 2
-      fi
-      run_single "$fixture"
-    done
-  fi
-
-  # Summary
-  echo -e "\n${CYAN}=== Summary ===${NC}"
-  echo -e "  Total: $total_count fixtures"
-  echo -e "  ${GREEN}Pass:  $pass_count${NC}"
-  echo -e "  ${RED}Fail:  $fail_count${NC}"
-  echo -e "  ${YELLOW}Skip:  $skip_count${NC}"
-
-  if [ "$fail_count" -gt 0 ]; then
-    exit 1
-  fi
-  exit 0
-}
-
-main "$@"
+main
