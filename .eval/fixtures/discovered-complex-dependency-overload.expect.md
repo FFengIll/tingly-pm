@@ -22,15 +22,15 @@
 
 ## Turn 6: Add dependency: subtask1 depends on main
 - Expect: Dependency added
-- Tool: ManageDependency
+- Tool: AddDependency
 
 ## Turn 7: Add dependency: subtask2 depends on main
 - Expect: Dependency added
-- Tool: ManageDependency
+- Tool: AddDependency
 
 ## Turn 8: Add dependency: subtask3 depends on subtask1
 - Expect: Dependency added
-- Tool: ManageDependency
+- Tool: AddDependency
 
 ## Turn 9: Update main task status to done
 - Expect: Status updated
@@ -46,6 +46,6 @@
 
 ## Turn 12: List all tasks
 - Expect: Shows all 4 tasks with dependencies and status
-- Tool: QueryTasks
+- Tool: ListTasks
 
 CONFIDENCE: high - Tests complex dependency management and multiple state transitions
