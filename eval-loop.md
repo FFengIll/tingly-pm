@@ -2,7 +2,7 @@
 
 **Version:** 2.1
 **Agent:** tingly-pm (AI project manager)
-**Driver:** Claude Code (via `eval-loop.sh`)
+**Worker:** Claude Code (invoked per-round by the outer loop)
 **Date:** 2026-03-29
 
 ---
@@ -23,15 +23,9 @@ Modify → Build → Execute → Observe → Evaluate → Commit or Revert → R
 | `.pm/` | Agent runtime data (tasks, sessions, config) | Agent itself |
 | `.worktree/` | Experimental branches (gitignored, ephemeral) | `git worktree add` |
 
-### Usage
+### Role
 
-```bash
-./eval-loop.sh              # default: 4 rounds, auto-detect next round, parallel subagents
-./eval-loop.sh -n 5 -m opus # custom rounds and model
-./eval-loop.sh --dry-run    # preview without executing
-```
-
-See README.md for full CLI reference (`-s`, `-j`, `-d`, etc).
+You are the **inner worker** of the eval loop. The outer loop (how many rounds, when to start, parallelism, etc.) is controlled externally via `eval-loop.sh` — you don't need to worry about it. Your job is to execute **one complete round** of the methodology described below, using the round number and total passed to you in the prompt.
 
 ---
 
@@ -485,15 +479,6 @@ Universal criteria for any agent improvement:
 8. **Record everything** — learnings feed into next round's hypotheses
 
 ---
-
-## Running the Loop
-
-The `eval-loop.sh` script handles the outer loop. It passes the prompt to `claude -p`, which reads this spec and executes one complete round.
-
-Key behaviors you should be aware of:
-- **Round numbering is auto-detected** — the script scans `.eval/` for existing round artifacts and starts at the next number. Your round number in the prompt reflects this.
-- **Serial mode** — when the prompt contains `EXECUTION MODE: SERIAL`, you MUST run all subagents sequentially (one at a time), not in parallel. This applies to both Part 1 and Part 2 phases.
-- **Exploration seed** — when the prompt contains an `EXPLORATION SEED`, prioritize that focus area in your hypotheses and test selection.
 
 ---
 
