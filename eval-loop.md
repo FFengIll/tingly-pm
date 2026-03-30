@@ -21,6 +21,7 @@ Modify → Build → Execute → Observe → Evaluate → Commit or Revert → R
 |-----------|---------|------------|
 | `.eval/` | Per-round artifacts (baseline results, experiment reports, decisions) | Claude Code (each round writes here) |
 | `.pm/` | Agent runtime data (tasks, sessions, config) | Agent itself |
+| `.worktree/` | Experimental branches (gitignored, ephemeral) | `git worktree add` |
 
 ### Usage
 
@@ -477,7 +478,7 @@ Universal criteria for any agent improvement:
 1. **Build before run** — compilation must succeed
 2. **Test before commit** — existing tests must pass
 3. **Isolated environment** — never use real user data for testing
-4. **Branch per round** — merge to main only when confident
+4. **Branch per round** — use `.worktree/exp-round-{N}` for isolation, merge to main only when confident
 5. **Verify before commit** — Part 2 must pass before any commit
 6. **Revert immediately** — if Part 2 fails, revert ALL
 7. **Commit with intent** — message explains what behavior improved

@@ -1,7 +1,7 @@
 # tingly-pm Improvement Playbook
 
 **Scope**: tingly-pm specific improvement guidance
-**Based on**: 4 rounds of iterative improvement (2026-03-28)
+**Based on**: 11 rounds of iterative improvement (2026-03-28 ~ 2026-03-30)
 **Method**: [Agent Iterative Improvement Methodology v2](agent-improvement-methodology-20260328.spec.md) — parallel fuzzing eval + two-part verify-before-commit loop
 
 ---
@@ -10,7 +10,7 @@
 
 Before starting a new improvement round on tingly-pm:
 
-1. Read the **Baseline Test Suite** — run it first to find current problems
+1. Read the **Baseline Test Suite** — run `eval-assert.sh smoke` first
 2. Check **Known Constraints** — don't waste time on architectural limitations
 3. Check **Prompt Do's and Don'ts** — don't regress on solved problems
 4. Check **Tool Design Rules** — don't re-introduce removed patterns
@@ -35,6 +35,21 @@ Each improvement round has two parts:
 
 This prevents confirmation bias and catches cross-feature regressions.
 
+### Experimental Branches (`.worktree/`)
+
+Experiments and eval rounds run in git worktrees under `.worktree/`:
+
+```
+.worktree/
+├── exp-round-N-name/    # Per-round experiment branch
+├── exp-feature-x/       # Feature experiment
+└── ...
+```
+
+- `.worktree/` is gitignored — worktrees are ephemeral
+- Merge to main only after Part 2 verification passes
+- Clean up after merge: `git worktree remove .worktree/exp-name`
+
 ---
 
 ## Architecture Overview
@@ -43,17 +58,19 @@ This prevents confirmation bias and catches cross-feature regressions.
 tingly-pm/
 ├── main.go              # Entry point, mode selection, agent creation
 ├── prompt/prompt.go     # System prompt (highest impact for behavior)
-├── tools/tools.go       # 12 agent tools (medium impact)
+├── tools/tools.go       # 16 agent tools (medium impact)
 ├── board/               # Data layer (task CRUD, members, timeline, reports)
 │   ├── task.go          # Task struct, CRUD, status lifecycle
 │   ├── task_file.go     # Markdown frontmatter parse/format
-│   ├── member.go        # Member CRUD
+│   ├── member.go        # Member CRUD + QueryMembers (name/label search)
 │   ├── timeline.go      # Append + read events (JSONL)
 │   ├── report.go        # Summary + daily/weekly report generation
 │   └── board.go         # EnsureInit (directory + git setup)
 └── .pm/                 # Runtime data (tasks/, archive/, members.json, timeline.jsonl)
-├── .eval/               # Eval loop artifacts (round-N/ with reports, decisions)
-└── eval-loop.sh         # Outer loop driver (triggers claude -p per round)
+├── .eval/               # Eval loop artifacts (round-N/, fixtures/)
+├── .worktree/           # Experimental branches (gitignored)
+├── eval-loop.sh         # Outer loop driver (triggers claude -p per round)
+└── eval-assert.sh       # Automated fixture regression testing
 ```
 
 ### Impact Ranking
@@ -69,64 +86,43 @@ tingly-pm/
 
 ## Baseline Test Suite
 
-Run this before every improvement round. Uses JSONL fixture files for both single and multi-turn tests.
+Run this before every improvement round.
 
 ```bash
-# Setup
-mkdir -p /tmp/test-pm-baseline
-CONFIG="-config .pm"
+# Automated assertions (recommended)
+./eval-assert.sh smoke          # 5 smoke tests only
+./eval-assert.sh                # all 56 fixtures
+./eval-assert.sh -v workflow-create-dep-archive  # verbose single fixture
 
-# Multi-turn: full workflow (create, dedup, dependency, assign, archive, list)
-cat .eval/fixtures/workflow-create-dep-archive.jsonl \
-  | timeout 120 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG 2>/dev/null
-
-# Multi-turn: context resolution by name
-cat .eval/fixtures/context-resolve-by-name.jsonl \
-  | timeout 60 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG 2>/dev/null
-
-# Multi-turn: implicit references (this/that task)
-cat .eval/fixtures/context-implicit-reference.jsonl \
-  | timeout 120 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG 2>/dev/null
-
-# Multi-turn: cross-language context
-cat .eval/fixtures/context-cross-language.jsonl \
-  | timeout 60 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG 2>/dev/null
+# Manual fixture execution
+cat .eval/fixtures/{name}.jsonl \
+  | timeout {N} ./tingly-pm -mode run -dir /tmp/test-{id} -config .pm 2>/dev/null
 ```
 
-### Expected Results
+Timeout by turn count: 1=15s, 2-3=30s, 4-5=60s, 6+=90s.
 
-See individual `.expect.md` files for per-turn grading criteria.
+### Smoke Tests (Mandatory)
 
-| Fixture | Key Checks |
-|---------|------------|
-| workflow-create-dep-archive | Create p0/p1, dep by name, archive by name, clean list |
-| context-resolve-by-name | Create, update by name (no ID asked), list confirms |
-| context-implicit-reference | "第一个任务" resolves correctly, archives |
-| context-cross-language | Chinese create, English "first task" update works |
+| Fixture | Category | Description |
+|---------|----------|-------------|
+| create-task-english | create | English input, explicit priority |
+| create-task-chinese | create | Chinese input, keyword priority detection |
+| update-task-single-field | update | No hallucination on update |
+| create-task-duplicate | create | Dedup detection |
+| error-empty-input | error | Empty content handling |
 
-### Single-Turn Quick Tests
+### Key Workflow Fixtures
 
-```bash
-# Error handling
-cat .eval/fixtures/update-task-nonexistent.jsonl \
-  | timeout 30 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG 2>/dev/null
-# Expected: graceful error with suggestion
+| Fixture | Turns | Description |
+|---------|-------|-------------|
+| workflow-create-dep-archive | 5 | Full lifecycle: create → dep → archive → list |
+| workflow-create-assign-list | 4 | Create → register member → assign → list |
+| context-ordinal-reference | 4 | Create tasks, resolve ordinal reference ("第一个任务") |
+| context-cross-language | 3 | Chinese create, English update by reference |
+| discovered-member-removal-workflow | 7 | Register → create tasks → remove member → verify |
+| report-types-session | 4 | Weekly report + summary + session save |
 
-# Empty input
-cat .eval/fixtures/error-empty-input.jsonl \
-  | timeout 30 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG 2>/dev/null
-# Expected: helpful intro message
-
-# English input
-cat .eval/fixtures/create-task-english.jsonl \
-  | timeout 30 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG 2>/dev/null
-# Expected: English response, correct priority
-
-# Summary
-cat .eval/fixtures/summary-stats.jsonl \
-  | timeout 30 ./tingly-pm -mode run -dir /tmp/test-pm-baseline $CONFIG 2>/dev/null
-# Expected: project stats
-```
+See `.eval/fixtures/INDEX.md` for the full fixture manifest.
 
 ---
 
@@ -140,13 +136,13 @@ These are architectural limitations. Don't try to fix them via prompt.
 | Session persistence requires `.pm/sessions/` | Files only persist within same `.pm/` dir | Accept: cross-session context is lost |
 | Tool schema is auto-generated from Go struct tags | No manual schema control | Change the struct, rebuild |
 | Console formatter leaks to stdout in chat mode | `SetConsoleOutputEnabled` only affects `run`/`serve` | Accept: chat mode has ANSI output |
-| `ListTasks` only scans `tasks/` dir | Archive is separate directory | `search_tasks` tool covers both; `ListTasks` is active-only by design |
+| `ListTasks` only scans `tasks/` dir | Archive is separate directory | `SearchTasks` covers both; `ListTasks` is active-only by design |
 
 ---
 
 ## Prompt Do's and Don'ts
 
-Current prompt has 6 sections. Changes must follow these rules:
+Current prompt has 12 sections (~148 lines). Changes must follow these rules:
 
 ### Do
 
@@ -162,77 +158,90 @@ Current prompt has 6 sections. Changes must follow these rules:
 - **Don't add instructions that require context the model might not have**
 - **Don't duplicate tool descriptions** — they're auto-generated from struct tags
 - **Don't add overly specific examples** — they cause overfitting to test inputs
-- **Don't add more than ~80 lines** — beyond that, attention degrades
+- **Don't exceed 150 lines** — use Prompt Size Management (see eval-loop.md)
 
 ### Current Prompt Sections
 
 ```
-1. Task Creation     — dedup, slug generation
+1. Task Creation     — dedup, fuzzy matching, slug generation
 2. Task Updates      — CRITICAL: no hallucination
-3. Task References   — resolve informal names via search
-4. Task ID Format    — TASK-YYYYMMDD-HHmmss
-5. Status Lifecycle  — active vs terminal states
-6. Priority Guide    — explicit Chinese/English mappings
-7. Response Style    — language matching, conciseness
+3. Member Assignment — validation, label assignment
+4. Task References   — resolve informal names via search
+5. Context Resolution — implicit references (this/that task)
+6. Task ID Format    — TASK-YYYYMMDD-HHmmss
+7. Status Lifecycle  — active vs terminal states
+8. Priority Guide    — explicit Chinese/English mappings
+9. Response Style    — language matching, conciseness
+10. Tool Call Efficiency — batch when possible, avoid redundant calls
+11. Task Reassignment — move assignee, update references
+12. Member Labels    — role-based tags (e.g., frontend, backend)
 ```
 
 ---
 
 ## Tool Design Rules
 
-Current tool count: 12. Rules for any tool changes:
+Current tool count: 16 (Go methods). Rules for any tool changes:
 
 ### Before Adding a Tool
 
-- Does `list_tasks` or `search_tasks` with filters already cover this?
+- Does `ListTasks`/`SearchTasks` with filters already cover this?
 - Is this a write-only gap (can write but not read)?
 - Will the model reliably choose this tool over similar ones?
 
 ### Before Removing a Tool
 
-- Is the prompt strong enough to compensate? (e.g., "only set specified fields" made `assign_task` removable)
+- Is the prompt strong enough to compensate?
 - Test the replacement path works for the same use case
 
 ### Tool Naming Convention
 
-- Verb phrases: `create_task`, `list_tasks`, `search_tasks`
-- Not nouns: `task_creator`, `task_list`
-- Not overly specific: `search_tasks_by_title_and_body` → just `search_tasks`
+- PascalCase: `CreateTask`, `ListTasks`, `SearchTasks`
+- Tool names are derived from Go method names via `RegisterAll`
 
 ### Output Format Rules
 
 - Include all relevant context in the tool response (assignee, status, age)
-- Don't rely on the LLM to reformat raw data — the tool should return scannable text
+- Don't rely on the LLM to reformat raw data — return scannable text
 - Add computed fields the raw data doesn't have (age, grouping headers)
-- Keep consistent assignee format: ` → name` or `-> name` (pick one, stick with it)
 
 ### Removed Tools (Don't Re-Add)
 
 | Tool | Removed in | Why | Replacement |
 |------|-----------|-----|-------------|
 | `assign_task` | Round 2 | Subset of `update_task(assignee=...)` | Prompt says "only set specified fields" |
-| `show_blockers` | Round 4 | Merged into `list_tasks(show_blockers=true)` | Filter field on existing tool |
+| `show_blockers` | Round 4 | Merged into `list_tasks(show_blockers=true)` | Filter field |
+| `register_member` | Round 8 | Merged into `upsert_member` | Upsert handles create + update |
+| `update_member` | Round 8 | Merged into `upsert_member` | Upsert handles create + update |
+| `add_dependency` | Round 9 | Merged into `manage_dependency(action="add")` | Action parameter |
+| `remove_dependency` | Round 9 | Merged into `manage_dependency(action="remove")` | Action parameter |
+| `add_comment` | Round 11 | Merged into `update_task(body_append)` | Comment is just body append |
+| `archive_task` | Round 11 | Merged into `update_task(status="done"/"dropped")` | Auto-archive on terminal status |
+| `summary` | Round 11 | Merged into `generate_report(type="summary")` | Unified report generation |
+| `list_timeline` | Round 11 | Merged into `generate_report(type="timeline")` | Unified report generation |
 
 ---
 
-## Current Tool Inventory
+## Current Tool Inventory (16 Go methods)
 
 | Tool | Args | Purpose |
 |------|------|---------|
-| `create_task` | title, slug, priority?, assignee?, labels?, description? | Create task with dedup |
-| `update_task` | task_id, status?, priority?, assignee?, labels?, title?, slug? | Update fields (no hallucination) |
-| `get_task` | task_id | Read task detail |
-| `list_tasks` | status?, assignee?, priority?, label?, show_blockers? | List/filter with grouping + age |
-| `archive_task` | task_id, resolution (done/dropped) | Move to archive |
-| `search_tasks` | query | Full-text search (active + archive) |
-| `add_comment` | task_id, content, by? | Append comment to task body |
-| `register_member` | name, type (human/agent), labels? | Add team member |
-| `list_members` | type? | List team members |
-| `add_dependency` | task_id, depends_on | Add blocked_by relation |
-| `remove_dependency` | task_id, depends_on | Remove relation |
-| `list_timeline` | limit? | Read recent timeline events |
-| `generate_report` | report_type (daily/weekly) | Generate + save report |
-| `summary` | — | Quick status stats |
+| `CreateTask` | title, slug, priority?, assignee?, labels?, description? | Create task with dedup |
+| `UpdateTask` | task_id, status?, priority?, assignee?, labels?, title?, slug? | Update fields (no hallucination) |
+| `GetTask` | task_id | Read task detail |
+| `ListTasks` | status?, assignee?, priority?, label?, show_blockers? | List/filter with grouping + age |
+| `ArchiveTask` | task_id, resolution (done/dropped) | Move to archive |
+| `SearchTasks` | query | Full-text search (active + archive) |
+| `AddComment` | task_id, content, by? | Append comment to task body |
+| `UpsertMember` | name, member_type?, labels? | Create or update team member |
+| `ListMembers` | member_type? | List team members |
+| `SearchMembers` | labels | Search members by labels |
+| `RemoveMember` | name | Remove team member |
+| `AddDependency` | task_id, depends_on | Add blocked_by relation |
+| `RemoveDependency` | task_id, depends_on | Remove relation |
+| `GenerateReport` | report_type (daily/weekly) | Generate + save report |
+| `Summary` | — | Quick status stats |
+| `SaveSession` | label? | Save conversation state |
 
 ---
 
@@ -241,29 +250,21 @@ Current tool count: 12. Rules for any tool changes:
 ### Build & Test
 
 ```bash
-go build .                          # Must succeed
-go test ./...                       # Must pass (board/ has tests)
+go build -o tingly-pm .            # Must succeed
+go test ./...                      # Must pass (board/ has tests)
+./eval-assert.sh smoke             # Automated smoke tests
 ```
 
-### Run Tests
+### Run Fixtures
 
 ```bash
-# Run a fixture (single or multi-turn)
-cat .eval/fixtures/{name}.jsonl | ./tingly-pm -mode run -dir /tmp/test $CONFIG 2>/dev/null
+# Automated assertions
+./eval-assert.sh                    # all fixtures
+./eval-assert.sh smoke              # smoke tests only
+./eval-assert.sh -v {name}          # verbose single fixture
 
-# With output capture
-cat .eval/fixtures/{name}.jsonl | ./tingly-pm -mode run -dir /tmp/test $CONFIG 2>/dev/null | tee output.jsonl
-
-# Timeout by turns: 1=30s, 2-3=60s, 4-5=120s, 6+=180s
-cat .eval/fixtures/{name}.jsonl | timeout 60 ./tingly-pm -mode run -dir /tmp/test $CONFIG 2>/dev/null
-```
-
-### Config
-
-```bash
-# Uses .pm/config.json for model settings (contains API key, gitignored)
-# .pm/config.json is in .gitignore — don't commit it
-CONFIG="-config .pm"
+# Manual execution
+cat .eval/fixtures/{name}.jsonl | timeout {N} ./tingly-pm -mode run -dir /tmp/test-{id} -config .pm 2>/dev/null
 ```
 
 ### Data Directory Structure
@@ -278,19 +279,20 @@ CONFIG="-config .pm"
 └── sessions/        # Session persistence
 
 .eval/
-└── fixtures/        # Stream JSON test fixtures (*.jsonl + *.expect.md + INDEX.md)
+├── fixtures/        # Test fixtures (*.jsonl + *.expect.md + INDEX.md)
+├── round-{N}/       # Per-round reports and decisions
+└── round-{N}.log    # Full Claude output per round
+
+.worktree/           # Experimental branches (gitignored, ephemeral)
 ```
 
 ---
 
 ## Improvement Backlog
 
-Potential improvements identified but not yet attempted:
-
 | Priority | Improvement | Complexity | Notes |
 |----------|------------|------------|-------|
-| Medium | Merge `summary` into `list_tasks` | Low | Summary is just counts; list_tasks with `limit=0` could show stats |
-| Medium | Proactive behavior prompt | Low | "Suggest checking blocked tasks when listing" |
-| Low | Batch task creation | Medium | Model-dependent; prompt-only |
-| Low | Multi-project support | High | Architectural change |
-| Low | Task age-based alerts | Medium | "Task X has been todo for 5 days" |
+| High | Cross-language duplicate detection | Medium | LLM semantic gap — Chinese/English dedup |
+| Medium | Aggressive duplicate threshold tuning | Low | Fuzzy match sensitivity |
+| Low | Fix "list members" to show both humans and agents | Low | Default ListMembers behavior |
+| Future | Stateful context in `run` mode | High | Architectural change |
