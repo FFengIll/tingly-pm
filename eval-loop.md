@@ -97,11 +97,23 @@ Timeout by turn count: 1 turn=15s, 2-3 turns=30s, 4-5 turns=60s, 6+ turns=90s.
 
 ### Initial Fixture Set
 
-52 fixtures total: 41 single-turn + 11 multi-turn. See `INDEX.md` for the full list. This is a starting point — subagents MUTATE and DISCOVER new fixtures each round.
+56 fixtures total: 23 single-turn + 33 multi-turn. See `INDEX.md` for the full list. This is a starting set — subagents MUTATE and DISCOVER new fixtures each round.
 
 ### Expectation Files
 
-Multi-turn fixtures have companion `.expect.md` files with per-turn grading criteria (prose, not machine-parseable). Subagents read these to grade each turn independently.
+All multi-turn fixtures have companion `.expect.md` files with per-turn grading criteria. Subagents read these to grade each turn independently.
+
+### Automated Assertions
+
+`eval-assert.sh` provides programmatic, deterministic PASS/FAIL by parsing tool call patterns in agent output:
+
+```bash
+./eval-assert.sh                    # all fixtures
+./eval-assert.sh smoke              # smoke tests only
+./eval-assert.sh -v create-task-english  # verbose
+```
+
+This serves as a reproducible regression gate independent of LLM-based grading. Use alongside `.expect.md` for comprehensive evaluation.
 
 ---
 
@@ -373,12 +385,12 @@ tingly-pm/
 | `show_blockers` | Round 4 | Merged into `list_tasks(show_blockers=true)` | Filter field |
 | `register_member` | Round 8 | Merged into `upsert_member` | Upsert handles create + update |
 | `update_member` | Round 8 | Merged into `upsert_member` | Upsert handles create + update |
-| `list_tasks` | Round 9 | Merged into `query_tasks` | Unified query with optional search |
-| `search_tasks` | Round 9 | Merged into `query_tasks` | Unified query with optional search |
-| `list_members` | Round 9 | Merged into `query_members` | Unified query with name+label search |
-| `search_members` | Round 9 | Merged into `query_members` | Unified query with name+label search |
-| `add_dependency` | Round 9 | Merged into `manage_dependency(action="add")` | Action parameter |
-| `remove_dependency` | Round 9 | Merged into `manage_dependency(action="remove")` | Action parameter |
+| `list_tasks` | Round 9 | Merged into `query_tasks` | `SearchTasks` for search, `ListTasks` for listing |
+| `search_tasks` | Round 9 | Merged into `query_tasks` | `SearchTasks` for search, `ListTasks` for listing |
+| `list_members` | Round 9 | Merged into `query_members` | `SearchMembers` for search, `ListMembers` for listing |
+| `search_members` | Round 9 | Merged into `query_members` | `SearchMembers` for search, `ListMembers` for listing |
+| `add_dependency` | Round 9 | Merged into `manage_dependency(action="add")` | `AddDependency` tool |
+| `remove_dependency` | Round 9 | Merged into `manage_dependency(action="remove")` | `RemoveDependency` tool |
 
 ### Known Constraints
 
@@ -515,12 +527,14 @@ stdio mode: broken (ANSI escape codes in JSON output)
 ### Ending State
 
 ```
-tools: 10 (create_task, update_task, get_task, query_tasks,
-       upsert_member, query_members, remove_member,
-       manage_dependency, generate_report, save_session)
+tools: 10 (create_task, update_task, get_task, list_tasks,
+       archive_task, search_tasks, add_comment,
+       upsert_member, remove_member, list_members, search_members,
+       add_dependency, remove_dependency, generate_report, summary, save_session, list_timeline)
 prompt: ~148 lines, 12 structured sections
 stdio mode: clean JSON
-fixtures: 55 (41 single + 14 multi)
+fixtures: 56 (23 single + 33 multi)
+assertions: eval-assert.sh (programmatic regression gate)
 ```
 
 ---
