@@ -1,0 +1,7 @@
+{"content": "注册成员bob, human, backend"}
+{"content": "创建任务：API接口重构, p0, 指派给bob"}
+{"content": "创建任务：数据库优化, p1, 指派给bob"}
+{"content": "列出bob的任务"}
+{"content": "移除成员bob"}
+{"content": "列出所有成员"}
+{"content": "列出所有任务"}

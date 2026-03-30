@@ -1,0 +1,7 @@
+{"content": "注册成员：王五，类型human，标签devops,k8s"}
+{"content": "列出所有成员"}
+{"content": "搜索标签包含frontend的成员"}
+{"content": "更新王五的标签，增加docker,terraform"}
+{"content": "创建任务：部署流水线优化，p1，指派给王五"}
+{"content": "给王五的部署流水线优化任务添加备注：需要在本月底前完成CI/CD迁移"}
+{"content": "列出所有任务"}
