@@ -1,8 +1,16 @@
 # tingly-pm
 
-> **Self-evolving** — this agent iteratively improves its own prompt, tools, and behavior through usage.
+A file-based project board with two front-ends:
 
-AI project manager that runs a file-based task board. Built with Go, [Anthropic Claude](https://docs.anthropic.com/) and [tingly-agentscope](https://github.com/tingly-dev/tingly-agentscope).
+1. **`pm` CLI + Claude Code skill** *(recommended)* — expose the board as
+   plain subcommands; let any mature agent (Claude Code, scripts, your own
+   tools) drive it. No bespoke agent loop, no system prompt to maintain.
+2. **`tingly-pm` ReAct agent binary** — the original self-contained agent
+   built on [Claude](https://docs.anthropic.com/) and
+   [tingly-agentscope](https://github.com/tingly-dev/tingly-agentscope).
+   Kept for backward compatibility and the self-evolving eval loop.
+
+Both share the same `board/` package and `.pm/` data layout.
 
 ## Features
 
@@ -15,7 +23,45 @@ AI project manager that runs a file-based task board. Built with Go, [Anthropic 
 - **Bilingual** — Supports both Chinese and English interactions
 - **Multiple Modes** — Interactive chat, JSON stdio, and HTTP server
 
-## Quick Start
+## Quick Start — `pm` CLI
+
+### Build
+
+```bash
+go build -o /usr/local/bin/pm ./cmd/pm
+```
+
+### Use
+
+```bash
+cd /path/to/your-project
+pm init                                                                  # creates ./.pm/
+pm task create --title "Fix login bug" --slug fix-login --priority p0
+pm task list
+pm member add alice --type human --labels frontend,react
+pm task update TASK-20260506-094928 --status in_progress --assignee alice
+pm summary
+pm report daily
+```
+
+Every subcommand accepts `--dir DIR` (project root, default `.`) and
+`--json` (structured output for piping through `jq`). Run `pm` with no
+arguments or `pm <command> -h` for the full surface.
+
+### Use with Claude Code
+
+Install the bundled skill so Claude Code knows when to invoke `pm`:
+
+```bash
+ln -s "$(pwd)/skill" ~/.claude/skills/pm
+```
+
+Then in any Claude Code session inside a project, ask things like
+"create a high-priority task to fix login" or "give me a daily standup" —
+the agent will drive `pm` for you. See [`skill/SKILL.md`](skill/SKILL.md)
+for the trigger conditions and the recipes the agent follows.
+
+## Quick Start — `tingly-pm` agent (legacy)
 
 ### Prerequisites
 
@@ -164,19 +210,31 @@ Add OAuth2 login flow with session management.
 ## Architecture
 
 ```
-main.go          # Entry point, modes (chat/run/serve), config loading
-├── board/       # File-based task board logic
-│   ├── board.go      # Directory initialization
-│   ├── task.go       # Task CRUD, archive, status lifecycle
-│   ├── task_file.go  # Markdown frontmatter parsing/formatting
-│   ├── member.go     # Team member registry
-│   ├── report.go     # Summary and report generation
-│   └── timeline.go   # Append-only event log
-├── prompt/      # System prompt definition
-└── tools/       # Agent tools (task ops, search, reports, session)
+main.go          # Legacy ReAct agent binary (chat/run/serve modes)
+cmd/pm/          # `pm` CLI binary — recommended front-end
+├── main.go      # Subcommand dispatcher
+├── task.go      # task create|update|get|list|search|archive|comment|block|unblock
+├── member.go    # member add|list|search|remove
+├── report.go    # report|summary|timeline
+├── init.go      # init
+└── output.go    # Shared formatters (human + JSON), interspersed flag parser
+board/           # File-based task board logic — shared by both binaries
+├── board.go     # Directory initialization
+├── task.go      # Task CRUD, archive, status lifecycle
+├── task_file.go # Markdown frontmatter parsing/formatting
+├── member.go    # Team member registry
+├── report.go    # Summary and report generation
+└── timeline.go  # Append-only event log
+prompt/          # Legacy agent's system prompt
+tools/           # Legacy agent's tool wrappers
+skill/           # Claude Code skill for the `pm` CLI
+└── SKILL.md
 ```
 
-Built on a **ReAct loop** (reason + act) with tool calling via [tingly-agentscope](https://github.com/tingly-dev/tingly-agentscope).
+The legacy binary is built on a **ReAct loop** (reason + act) with tool
+calling via [tingly-agentscope](https://github.com/tingly-dev/tingly-agentscope).
+The `pm` CLI has no LLM dependency — it only needs the Go standard library
+plus the `board/` package.
 
 ## Eval Loop
 
